@@ -1,0 +1,121 @@
+// 本地 WebRTC aar 包装模块（AGP 推荐的本地 aar 引入方式）：
+// flatDir / files() 对 aar 的变体匹配不可靠（classes 不进 compile classpath），
+// 经 default configuration 发布 aar 工件则完全可靠。
+//
+// 同时内建字节码版本自动降级：WebRTC 构建侧用 JDK 25 出包时 classes.jar
+// 为 v69，本机 JDK 17 的 javac 无法读取（"类文件具有错误的版本 69.0, 应为
+// 61.0"）。patchAarBytecodeVersion 任务在构建期原位改写 class 头版本字节
+// （仅版本字段，不重序列化、内容零改动），v<=61 的 aar 原样透传。
+// 换新 aar（修复 jni_zero 绑定类缺失后）直接覆盖 libs/libwebrtc-arm64-v8a.aar
+// 即可，无需其他改动。
+
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
+import java.io.FileInputStream
+import java.io.FileOutputStream
+import java.io.InputStream
+import java.util.zip.ZipEntry
+import java.util.zip.ZipInputStream
+import java.util.zip.ZipOutputStream
+
+def aarFile = file('../libwebrtc-arm64-v8a.aar')
+def patchedAar = new File(project.buildDir, 'libwebrtc-arm64-v8a-consumable.aar')
+def targetMajor = 61   // Java 17（本机 JDK 17 javac 可读上限）
+
+// 读当前 zip entry 的全部字节（读到本 entry 末尾为止，不越界）
+byte[] readEntry(InputStream is) {
+    ByteArrayOutputStream bos = new ByteArrayOutputStream()
+    byte[] buf = new byte[65536]
+    int n
+    while ((n = is.read(buf)) > 0) {
+        bos.write(buf, 0, n)
+    }
+    return bos.toByteArray()
+}
+
+// 原位补丁 class 版本字节；非 class 或版本已达标原样返回
+//（脚本方法无法访问脚本级 def 变量，targetMajor 经参数传入）
+byte[] patchClass(byte[] data, int targetMajor, int[] counter) {
+    if (data.length >= 8
+            && (data[0] & 0xFF) == 0xCA && (data[1] & 0xFF) == 0xFE
+            && (data[2] & 0xFF) == 0xBA && (data[3] & 0xFF) == 0xBE) {
+        int major = ((data[6] & 0xFF) << 8) | (data[7] & 0xFF)
+        if (major > targetMajor) {
+            data[4] = 0
+            data[5] = 0
+            data[6] = (byte) ((targetMajor >> 8) & 0xFF)
+            data[7] = (byte) (targetMajor & 0xFF)
+            counter[0]++
+        }
+    }
+    return data
+}
+
+// 重打包 zip：.class 补丁，内嵌 .jar（classes.jar）递归
+Map<String, byte[]> repackZip(InputStream is, int targetMajor, int[] counter) {
+    Map<String, byte[]> out = new LinkedHashMap<>()
+    ZipInputStream zis = new ZipInputStream(is)
+    try {
+        ZipEntry entry = zis.getNextEntry()
+        while (entry != null) {
+            if (!entry.isDirectory()) {
+                byte[] data = readEntry(zis)
+                if (entry.name.endsWith('.jar')) {
+                    Map<String, byte[]> nested = repackZip(
+                            new ByteArrayInputStream(data), targetMajor, counter)
+                    ByteArrayOutputStream bos = new ByteArrayOutputStream()
+                    ZipOutputStream zos = new ZipOutputStream(bos)
+                    try {
+                        nested.each { name, d ->
+                            zos.putNextEntry(new ZipEntry(name))
+                            zos.write(d)
+                            zos.closeEntry()
+                        }
+                    } finally {
+                        zos.close()
+                    }
+                    data = bos.toByteArray()
+                } else if (entry.name.endsWith('.class')) {
+                    data = patchClass(data, targetMajor, counter)
+                }
+                out.put(entry.name, data)
+            }
+            entry = zis.getNextEntry()
+        }
+    } finally {
+        zis.close()
+    }
+    return out
+}
+
+def patchAar = tasks.register('patchAarBytecodeVersion') {
+    description '将 aar（含内嵌 classes.jar）中 class 版本高于 targetMajor 的条目降级（仅改版本字节）'
+    inputs.file aarFile
+    outputs.file patchedAar
+    doLast {
+        int[] counter = new int[1]
+        Map<String, byte[]> result
+        FileInputStream fis = new FileInputStream(aarFile)
+        try {
+            result = repackZip(fis, targetMajor, counter)
+        } finally {
+            fis.close()
+        }
+        patchedAar.parentFile.mkdirs()
+        ZipOutputStream zos = new ZipOutputStream(new FileOutputStream(patchedAar))
+        try {
+            result.each { name, data ->
+                zos.putNextEntry(new ZipEntry(name))
+                zos.write(data)
+                zos.closeEntry()
+            }
+        } finally {
+            zos.close()
+        }
+        logger.lifecycle("patchAarBytecodeVersion: ${counter[0]} classes -> v${targetMajor}, "
+                + "${result.size()} top-level entries -> ${patchedAar}")
+    }
+}
+
+configurations.maybeCreate("default")
+artifacts.add("default", patchedAar) { builtBy patchAar }

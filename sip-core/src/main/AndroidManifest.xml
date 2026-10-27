@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- :sip-core 库模块最小 manifest。
+     namespace 由 build.gradle 提供；VIBRATE 为来电铃声振动所需，
+     合并入宿主 App。其余权限（RECORD_AUDIO / 电话状态等）由 App 侧声明。 -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.VIBRATE" />
+
+</manifest>

@@ -1,0 +1,21 @@
+# Gradle
+.gradle/
+build/
+
+# Kotlin daemon / incremental
+.kotlin/
+
+# CMake / NDK 构建中间产物（.cxx 由 externalNativeBuild 生成）
+.cxx/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# 本地环境
+local.properties
+
+# 日志与临时文件
+*.log
+*.tmp

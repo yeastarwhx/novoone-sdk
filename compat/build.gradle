@@ -1,0 +1,28 @@
+apply plugin: 'com.android.library'
+
+// :compat — Acrobits libSoftPhone SDK 兼容门面
+// 包名与 Acrobits 完全一致（cz.acrobits.libsoftphone.*），
+// 内部转发到 :sip-core（SipWebrtcEngine）。
+// 宿主 App 只需替换一行依赖即可切换引擎。
+
+android {
+    namespace 'cz.acrobits.libsoftphone'
+    compileSdk 36
+
+    defaultConfig {
+        minSdk 26
+        missingDimensionStrategy 'version', 'standard'
+        consumerProguardFiles 'consumer-rules.pro'
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    api project(':sip-core')
+    // fastjson（App 经 fastjson 序列化 CallEvent；Dict extends JSONObject）
+    api 'com.alibaba:fastjson:1.2.83'
+}

@@ -1,0 +1,132 @@
+apply plugin: 'com.android.library'
+
+// :sip-core — novoone 自研 SIP/WebRTC 引擎库模块
+//（移植自 novoone-sip-demo，结构性改造：多通话会话化 + 手动接听，见
+//  .trellis/tasks/09-10-android-acrobits-to-pjsip/arch-design.md §3）
+
+android {
+    namespace 'com.yeastar.sipcore'
+    compileSdk 36
+    ndkVersion "27.1.12297006"
+
+    defaultConfig {
+        minSdk 26
+        // 对齐宿主 App 的 flavor 维度
+        missingDimensionStrategy 'version', 'standard'
+
+        // WebRTC aar 仅含 arm64-v8a；pjsip 静态库为 aarch64 三元组
+        ndk {
+            abiFilters 'arm64-v8a'
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path "src/main/cpp/CMakeLists.txt"
+            version "3.22.1"
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+}
+
+// ------------------------------------------------------------------ //
+// 本地 WebRTC aar（org.webrtc，jni_zero 编译产物，仅 arm64-v8a）
+//
+// 两个约束与本模块的处理（补丁逻辑移植自 demo libs/webrtc/build.gradle）：
+//  1. aar 的 classes.jar 为 JDK 25 字节码（v69），本机 JDK 17 javac 读不了
+//     -> patchAarBytecodeVersion：构建期原位改写 class 头版本字节（仅版本
+//     字段，不重序列化、内容零改动），v<=61 原样透传；
+//  2. AGP 不支持 library 模块直接依赖本地 .aar 文件（assembleDebug 报
+//     "Direct local .aar file dependencies are not supported when building
+//     an AAR"），且 files(目录) 不进 AGP 的 compile classpath（实测）
+//     -> extractWebrtcClasses：从补丁后 aar 抽出 classes.jar 成独立 jar，
+//     compileOnly files(jar) 引用（jar 文件依赖实测可进 classpath）。
+//
+// 已知边界（Step 3/4 处理）：compileOnly 不传递 —— 宿主 App 运行期需要
+// org.webrtc 类与 libjingle_peerconnection_so.so，届时在 App 侧引入同一
+// aar（如恢复 demo 的 libs:webrtc 包装模块做法）。
+// 换新 aar 直接覆盖 libs/libwebrtc-arm64-v8a.aar 即可，无需其他改动。
+// ------------------------------------------------------------------ //
+
+// ------------------------------------------------------------------ //
+// WebRTC 编译期类引用（2026-09-15 收敛）：aar 与补丁脚本均收敛至
+// :libs:webrtc 模块（android/libs/libwebrtc-arm64-v8a.aar 单一副本 +
+// patchAarBytecodeVersion 字节码降级）。本模块仅从其补丁后产物抽取
+// classes.jar 作 compileOnly classpath（AGP 不支持 library 直接依赖
+// 本地 aar；runtime 由宿主 App implementation :libs:webrtc 提供）。
+// 换新 aar 只需覆盖 android/libs/libwebrtc-arm64-v8a.aar 一处。
+// ------------------------------------------------------------------ //
+
+import java.io.FileInputStream
+import java.io.FileOutputStream
+import java.io.OutputStream
+import java.util.zip.ZipEntry
+import java.util.zip.ZipInputStream
+
+def webrtcClassesJar = new File(project.buildDir, 'webrtc/webrtc-classes.jar')
+
+// 从 :libs:webrtc 的补丁后 aar（字节码已降级）抽出 classes.jar
+def extractWebrtcClasses = tasks.register('extractWebrtcClasses') {
+    description '从 :libs:webrtc 补丁后 aar 抽出 classes.jar 供编译期引用'
+    dependsOn project(':libs:webrtc').tasks.named('patchAarBytecodeVersion')
+    def patchedAar = new File(project(':libs:webrtc').buildDir,
+                              'libwebrtc-arm64-v8a-consumable.aar')
+    inputs.file patchedAar
+    outputs.file webrtcClassesJar
+    doLast {
+        boolean found = false
+        FileInputStream fis = new FileInputStream(patchedAar)
+        try {
+            ZipInputStream zis = new ZipInputStream(fis)
+            try {
+                ZipEntry entry = zis.getNextEntry()
+                while (entry != null) {
+                    if (!entry.isDirectory() && entry.name == 'classes.jar') {
+                        webrtcClassesJar.parentFile.mkdirs()
+                        OutputStream fos = new FileOutputStream(webrtcClassesJar)
+                        try {
+                            byte[] buf = new byte[65536]
+                            int n
+                            while ((n = zis.read(buf)) > 0) {
+                                fos.write(buf, 0, n)
+                            }
+                        } finally {
+                            fos.close()
+                        }
+                        found = true
+                        break
+                    }
+                    entry = zis.getNextEntry()
+                }
+            } finally {
+                zis.close()
+            }
+        } finally {
+            fis.close()
+        }
+        if (!found) {
+            throw new GradleException("classes.jar not found in ${patchedAar}")
+        }
+        logger.lifecycle("extractWebrtcClasses: ${patchedAar} -> ${webrtcClassesJar}")
+    }
+}
+
+// files() 不自动携带任务依赖，显式挂到 preBuild 保证编译前 jar 就绪
+//（实测 AGP 编译任务图中 preBuild 先于 compileDebugJavaWithJavac）
+tasks.named('preBuild') {
+    dependsOn extractWebrtcClasses
+}
+
+dependencies {
+    compileOnly files(webrtcClassesJar)
+}
