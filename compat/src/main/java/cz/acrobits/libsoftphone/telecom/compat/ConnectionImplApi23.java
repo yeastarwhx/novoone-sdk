@@ -49,19 +49,49 @@ class ConnectionImplApi23 extends Connection {
 
     @Override
     public void onAnswer() {
-        Instance.Calls.answerIncoming(callEvent, Call.DesiredMedia.voiceOnly());
+        try {
+            Instance.Calls.answerIncoming(callEvent, Call.DesiredMedia.voiceOnly());
+            /* 耳机接听无 UI 路径：App 不在前台时主动前台化（09-21 移植——
+             * 冷启动场景麦克风采集受限 + 通话页不在前台）*/
+            SdkBridge.get().bringAppToFront();
+        } catch (Throwable t) {
+            android.util.Log.e("Acrobits.TelecomConn", "onAnswer 异常: " + t);
+        }
     }
 
     @Override
     public void onReject() {
-        Instance.Calls.rejectIncomingHere(callEvent,
-                new Call.RejectReason("Rejected via Telecom", Call.RejectReason.Type.User));
-        Instance.Calls.close(callEvent);
+        try {
+            Instance.Calls.rejectIncomingHere(callEvent,
+                    new Call.RejectReason("Rejected via Telecom", Call.RejectReason.Type.User));
+        } catch (Throwable t) {
+            android.util.Log.e("Acrobits.TelecomConn", "onReject 异常: " + t);
+        }
     }
 
+    /**
+     * 挂断（含三星先斩后奏防御——09-21 移植）：
+     * 蜂窝来电期间系统无视 CAPABILITY_SUPPORT_HOLD，先 markCallAsDisconnected
+     * 再回调本方法（先斩后奏）终结 VoIP 通话。判定特征 = 连接已被系统置
+     * DISCONNECTED（正常耳机挂断时系统不会预先标记）；蜂窝 managed call
+     * 存在作复合条件。命中即系统策略终结：不挂引擎通话（引擎侧保持，
+     * 交 SystemCallHoldController 承接），仅清理本连接。
+     */
     @Override
     public void onDisconnect() {
-        Instance.Calls.close(callEvent);
+        try {
+            if (getState() == Connection.STATE_DISCONNECTED
+                    && SdkBridge.get().isManagedCellularCallActive()) {
+                android.util.Log.i("Acrobits.TelecomConn",
+                        "onDisconnect 系统策略终结（蜂窝通话存在），引擎通话保持"
+                        + " eventId=" + (callEvent != null ? callEvent.getEventId() : null));
+                disconnectAndDestroy(new DisconnectCause(DisconnectCause.REMOTE));
+                return;
+            }
+            Instance.Calls.close(callEvent);
+        } catch (Throwable t) {
+            android.util.Log.e("Acrobits.TelecomConn", "onDisconnect 异常: " + t);
+        }
     }
 
     @Override

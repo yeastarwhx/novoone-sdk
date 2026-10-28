@@ -1567,6 +1567,56 @@ public final class SdkBridge implements EngineCallback {
         return fallback;
     }
 
+    /**
+     * 是否存在蜂窝（managed）通话（09-21 移植）。
+     *
+     * 用于 Connection.onDisconnect 的三星仲裁策略防御：蜂窝来电期间系统
+     * 无视 CAPABILITY_SUPPORT_HOLD 先 markCallAsDisconnected 再回调
+     * onDisconnect 终结 VoIP 通话。isInManagedCall 只统计 managed call
+     * （蜂窝），self-managed（本 App）不计入，天然区分。API 31+；
+     * 低版本不可判定返回 false（防御不触发，行为退化为正常挂断）。
+     */
+    public boolean isManagedCellularCallActive() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            return false;
+        }
+        try {
+            TelecomManager tm = AndroidUtil.getApplicationContext()
+                    .getSystemService(TelecomManager.class);
+            return tm != null && tm.isInManagedCall();
+        } catch (Throwable t) {
+            android.util.Log.w(TAG, "isInManagedCall 查询失败: " + t);
+            return false;
+        }
+    }
+
+    /**
+     * 前台化 App（09-21 移植）：蓝牙耳机接听且 App 不在前台时调用。
+     * 冷启动场景（FCM 拉起 + 耳机接听）——①通话 UI 不在前台；②Android 15
+     * 后台麦克风采集受限（while-in-use），对端听不到我方。此处启动
+     * MainActivity 拉回前台（前台后 RN hydrate 自动导航通话页
+     * 已知边界：startActivity 无返回值，Android 10+ 的 BAL 拦截为静默
+     * 丢弃——SYSTEM_ALERT_WINDOW 未授予时冷启动场景可能前台化失败，
+     * 通话功能不受影响，回前台即恢复）。*/
+    public void bringAppToFront() {
+        Context ctx = AndroidUtil.getApplicationContext();
+        if (ctx == null) {
+            return;
+        }
+        try {
+            android.content.Intent intent = ctx.getPackageManager()
+                    .getLaunchIntentForPackage(ctx.getPackageName());
+            if (intent != null) {
+                intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK
+                        | android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP);
+                ctx.startActivity(intent);
+                android.util.Log.i(TAG, "耳机接听：已发起前台化");
+            }
+        } catch (Throwable t) {
+            android.util.Log.w(TAG, "前台化失败: " + t);
+        }
+    }
+
     /** 字符串协议路由 → CallAudioState 路由常量（BluetoothA2DP 归蓝牙） */
     private static int telecomRouteOf(String route) {
         if (AudioRouteHelper.ROUTE_SPEAKER.equals(route)) {
