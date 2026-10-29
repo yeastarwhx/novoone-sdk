@@ -18,7 +18,7 @@ import cz.acrobits.libsoftphone.event.CallEvent;
  * 状态回写（setRinging/setActive/setOnHold/setDisconnected）由 SdkBridge
  * 引擎回调驱动（applyCallState，幂等推进）。
  *
- * 09-21-android-telecom 移植项：
+ * API 23-27 Telecom 兼容层：
  * - 声明 CAPABILITY_SUPPORT_HOLD（系统让路策略）：不声明时 Telecom 接听
  *   蜂窝通话会按 ANSWER_DROPS_FG 直接丢弃本通话（三星实测根因）；声明后
  *   系统改调 onHold 让路，真正的 hold 业务仍由应用层承担
@@ -51,8 +51,8 @@ class ConnectionImplApi23 extends Connection {
     public void onAnswer() {
         try {
             Instance.Calls.answerIncoming(callEvent, Call.DesiredMedia.voiceOnly());
-            /* 耳机接听无 UI 路径：App 不在前台时主动前台化（09-21 移植——
-             * 冷启动场景麦克风采集受限 + 通话页不在前台）*/
+            /* 耳机接听无 UI 路径：App 不在前台时主动前台化（冷启动场景
+             * 麦克风采集受限 + 通话页不在前台）*/
             SdkBridge.get().bringAppToFront();
         } catch (Throwable t) {
             android.util.Log.e("Acrobits.TelecomConn", "onAnswer 异常: " + t);

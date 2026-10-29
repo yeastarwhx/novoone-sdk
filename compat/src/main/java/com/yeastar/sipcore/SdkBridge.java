@@ -25,7 +25,6 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Consumer;
 
 import cz.acrobits.ali.AndroidUtil;
 import cz.acrobits.libsoftphone.data.AudioRoute;
@@ -72,6 +71,8 @@ public final class SdkBridge implements EngineCallback {
     private static final String KEY_DISPLAYNAME = "acc_displayname";
     private static final String KEY_EXPIRES = "acc_expires";
     private static final String KEY_TRANSPORT = "acc_transport";
+    private static final String KEY_PUSH_REPORT_URL = "acc_push_report_url";
+    private static final String KEY_PUSH_REPORT_HEADERS = "acc_push_report_headers";
     private static final String KEY_ACCOUNT_ID = "acc_account_id";
 
     /** 引擎销毁→重建的间隔（对齐 sdk 模块 restartEngineAndRegister 节奏） */
@@ -80,7 +81,7 @@ public final class SdkBridge implements EngineCallback {
     /** 统计轮询周期（App 契约：1s） */
     private static final long STATS_POLL_MS = 1000;
 
-    /* Telecom（09-21-android-telecom 移植） */
+    /* Telecom 桥接 */
 
     /** 上报 extras 携带的 eventId 键（pending 槽配对键） */
     private static final String EXTRA_EVENT_ID = "cz.acrobits.libsoftphone.eventId";
@@ -164,12 +165,6 @@ public final class SdkBridge implements EngineCallback {
     /** 运行期连续异常计数（成功处理一次事件即清零；线程：主线程 + binder） */
     private final AtomicInteger mTelecomFailureStreak = new AtomicInteger();
 
-    /**
-     * 系统侧路由事实变化通知（字符串协议路由）。CallAudioState 变化即
-     * Telecom AudioRouteStateMachine 切换完成时刻（含断 SCO 的蓝牙切换），
-     * 以此驱动 UI 刷新取代固定延时轮询（SCO 慢切换场景轮询读到旧值）
-     */
-    private volatile Consumer<String> mOnSystemRouteChanged;
 
     /* 全局静音镜像（App 契约：Audio.isMuted 全局语义） */
     private volatile boolean mMuted;
@@ -204,9 +199,6 @@ public final class SdkBridge implements EngineCallback {
         mObserver = observer;
     }
 
-    public Listeners observer() {
-        return mObserver;
-    }
 
     public SipWebrtcEngine engine() {
         return mEngine;
@@ -527,6 +519,12 @@ public final class SdkBridge implements EngineCallback {
 
     @Override
     public void onRegisterState(final int status, String text) {
+        if (status == 200) {
+            /* 注册成功副作用（不依赖 observer）：token 补报 + 前台服务
+             * 就位（划掉任务 un-REGISTER 窗口的载体） */
+            PushTokenReporter.onRegistered();
+            SipForegroundService.start();
+        }
         Listeners observer = mObserver;
         if (observer == null) {
             return;
@@ -565,6 +563,10 @@ public final class SdkBridge implements EngineCallback {
         public String displayName;
         public int expires;
         public String transport = "tcp";
+        /* push token 上报配置（AccountXml pushTokenReporter* 字段，App 创建
+         * 账户时写入；上报由 SDK 内置 PushTokenReporter 完成） */
+        public String pushTokenReporterUrl;
+        public String pushTokenReporterCustomHeaders;
     }
 
     /** AccountXml → 注册（含引擎启动 / transport 重建 / 持久化） */
@@ -588,6 +590,9 @@ public final class SdkBridge implements EngineCallback {
         }
         String rawTransport = accountXml.getString("transport");
         snap.transport = normalizeTransport(rawTransport);
+        snap.pushTokenReporterUrl = emptyToNull(accountXml.getString("pushTokenReporterUrl"));
+        snap.pushTokenReporterCustomHeaders =
+                emptyToNull(accountXml.getString("pushTokenReporterCustomHeaders"));
         mAccount = snap;
         persistAccountSnapshot();
         return registerCurrentAccount();
@@ -618,7 +623,8 @@ public final class SdkBridge implements EngineCallback {
     /* 注册防重入标记（冷启动恢复 + App createAccount/refreshAccounts 并发
      * 调 registerCurrentAccount 时，后到的调用会 unregister 掉前一次正在
      * 进行的注册——导致 accId 被置 -1） */
-    private volatile boolean mRegisterInFlight = false;
+    private final java.util.concurrent.atomic.AtomicBoolean mRegisterInFlight =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
     /* 已成功注册的账号指纹（username@host），同账号重复调直接跳过 */
     private volatile String mRegisteredFingerprint;
 
@@ -631,23 +637,27 @@ public final class SdkBridge implements EngineCallback {
             return -1;
         }
         /* 同账号已注册：跳过（App 的 createAccount/refreshAccounts 多路径
-         * 都会到达这里，同账号反复 unregister+register 互相残杀） */
+         * 都会到达这里，同账号反复 unregister+register 互相残杀）。
+         * 须同时校验引擎真实注册态：划掉任务的优雅注销（un-REGISTER）直调
+         * engine.accountUnregister 不经过 SdkBridge（指纹仍在）但 accId 已
+         * 置 -1——FCM 唤醒（wakeupByPush → 此处）必须重注册才能随 REGISTER
+         * 带出推送三头，跳过会导致服务器不下发 INVITE（推送唤醒静默失效） */
         String fingerprint = snap.username + "@" + snap.host;
-        if (fingerprint.equals(mRegisteredFingerprint) && mEngine.isStarted()) {
+        if (fingerprint.equals(mRegisteredFingerprint) && mEngine.isStarted()
+                && mEngine.getAccId() >= 0) {
             android.util.Log.i(TAG, "registerCurrentAccount: same account already"
                     + " registered (" + fingerprint + "), skip");
             return 0;
         }
         /* 防重入：另一路径正在注册中，本次跳过 */
-        if (mRegisterInFlight) {
+        if (!mRegisterInFlight.compareAndSet(false, true)) {
             android.util.Log.i(TAG, "registerCurrentAccount: registration in progress, skip");
             return -2;
         }
-        mRegisterInFlight = true;
         try {
             return doRegister(snap);
         } finally {
-            mRegisterInFlight = false;
+            mRegisterInFlight.set(false);
         }
     }
 
@@ -717,6 +727,15 @@ public final class SdkBridge implements EngineCallback {
     private void persistAccountSnapshot() {
         try {
             AccountSnapshot s = mAccount;
+            /* 防御：残缺快照（password 空）不覆盖已持久化的密码，就地用
+             * 旧值补全——modify 链基于不完整 AccountXml 的 saveAccount 不得
+             * 弄丢凭证（FCM 冷唤醒重注册依赖完整快照） */
+            if (s.password == null || s.password.isEmpty()) {
+                String old = prefs(null).getString(KEY_PASSWORD, null);
+                if (old != null && !old.isEmpty()) {
+                    s.password = old;
+                }
+            }
             prefs(null).edit()
                     .putString(KEY_ACCOUNT_ID, s.id)
                     .putString(KEY_USERNAME, s.username)
@@ -727,6 +746,8 @@ public final class SdkBridge implements EngineCallback {
                     .putString(KEY_DISPLAYNAME, s.displayName)
                     .putInt(KEY_EXPIRES, s.expires)
                     .putString(KEY_TRANSPORT, s.transport)
+                    .putString(KEY_PUSH_REPORT_URL, s.pushTokenReporterUrl)
+                    .putString(KEY_PUSH_REPORT_HEADERS, s.pushTokenReporterCustomHeaders)
                     .apply();
         } catch (Throwable t) {
             android.util.Log.w(TAG, "persist account failed: " + t);
@@ -749,6 +770,8 @@ public final class SdkBridge implements EngineCallback {
             snap.displayName = sp.getString(KEY_DISPLAYNAME, null);
             snap.expires = sp.getInt(KEY_EXPIRES, 0);
             snap.transport = sp.getString(KEY_TRANSPORT, "tcp");
+            snap.pushTokenReporterUrl = sp.getString(KEY_PUSH_REPORT_URL, null);
+            snap.pushTokenReporterCustomHeaders = sp.getString(KEY_PUSH_REPORT_HEADERS, null);
             if (snap.username != null && !snap.username.isEmpty()
                     && snap.host != null && !snap.host.isEmpty()) {
                 mAccount = snap;
@@ -761,6 +784,7 @@ public final class SdkBridge implements EngineCallback {
     }
 
     public void clearAccount() {
+        SipForegroundService.stop();
         mAccount = new AccountSnapshot();
         try {
             prefs(null).edit().clear().apply();
@@ -779,9 +803,26 @@ public final class SdkBridge implements EngineCallback {
     /* 推送唤醒 / respawn / shutdown                                        */
     /* ------------------------------------------------------------------ */
 
+    /** 唤醒注册标识头撤除延迟：re-REGISTER 组包发出后再撤（服务器已按头配对） */
+    private static final long PUSH_HINT_CLEAR_DELAY_MS = 3000;
+
+    private static final String PUSH_HINT_HEADER = "P-hint";
+
+    /** P-hint 撤除定时器（单一可取消：3s 窗口内多条推送重挂，避免旧定时器提前撤新头） */
+    private Runnable mPushHintClear;
+
+    /** FCM token 登记（Instance.Notifications.Push.setRegistrationId）：存储并即时尝试上报 */
+    public void setPushToken(String token) {
+        PushTokenReporter.onToken(token);
+    }
+
     /**
      * 推送到达（Notifications.Push.handle）：确保引擎在册并 re-REGISTER。
-     * REGISTER 自定义头由 includeNonStandardSipHeader 已先行注入引擎。
+     * 业务键双头（X-Nov-Push-Session/X-REQUEST-ID）由 App 经
+     * includeNonStandardSipHeader 先行注入；此处补引擎协议头
+     * P-hint: background——服务器据此识别"推送唤醒的后台注册"并把 pending
+     * 呼入 INVITE 下发到这条注册（缺此头 INVITE 不下发），随 re-REGISTER
+     * 组包后 3s 撤除。
      */
     public boolean wakeupByPush() {
         if (!mEngine.isStarted()) {
@@ -792,6 +833,20 @@ public final class SdkBridge implements EngineCallback {
                 return false;
             }
         }
+        if (mPushHintClear != null) {
+            mMain.removeCallbacks(mPushHintClear);
+        }
+        mRegisterHeaders.put(PUSH_HINT_HEADER, "background");
+        applyRegisterHeaders();
+        mPushHintClear = new Runnable() {
+            @Override
+            public void run() {
+                mRegisterHeaders.remove(PUSH_HINT_HEADER);
+                applyRegisterHeaders();
+                mPushHintClear = null;
+            }
+        };
+        mMain.postDelayed(mPushHintClear, PUSH_HINT_CLEAR_DELAY_MS);
         if (mEngine.getAccId() >= 0) {
             return mEngine.accountReregister();
         }
@@ -822,6 +877,7 @@ public final class SdkBridge implements EngineCallback {
     /** 关停引擎（TerminateTask.execute）：现存 Telecom 连接一并拆除
      *  （PhoneAccount 保留——进程级账户随进程由 Telecom 清理） */
     public void shutdown() {
+        SipForegroundService.stop();
         stopStatsPolling();
         stopCustomRingtone();
         if (!mTelecomDisabled) {
@@ -1120,7 +1176,7 @@ public final class SdkBridge implements EngineCallback {
     }
 
     /* ------------------------------------------------------------------ */
-    /* Telecom（09-21-android-telecom 成果移植：pending 单槽 + 连接表 +     */
+    /* Telecom 桥接：pending 单槽 + 连接表 +                              */
     /* 终态拆除 + 特权路由协同 + 系统路由事实通知）                         */
     /* ------------------------------------------------------------------ */
 
@@ -1524,14 +1580,6 @@ public final class SdkBridge implements EngineCallback {
         if (route == null) {
             return;
         }
-        Consumer<String> callback = mOnSystemRouteChanged;
-        if (callback != null) {
-            try {
-                callback.accept(route);
-            } catch (Throwable t) {
-                android.util.Log.w(TAG, "onSystemRouteChanged 回调异常: " + t);
-            }
-        }
         Listeners observer = mObserver;
         if (observer != null) {
             try {
@@ -1541,10 +1589,6 @@ public final class SdkBridge implements EngineCallback {
         }
     }
 
-    /** 系统路由事实变化回调注册（字符串协议路由） */
-    public void setOnSystemRouteChanged(Consumer<String> callback) {
-        mOnSystemRouteChanged = callback;
-    }
 
     /**
      * 当前应承接路由协同的连接：STATE_ACTIVE 优先（多路并发时路由属于
@@ -1568,7 +1612,7 @@ public final class SdkBridge implements EngineCallback {
     }
 
     /**
-     * 是否存在蜂窝（managed）通话（09-21 移植）。
+     * 是否存在蜂窝（managed）通话。
      *
      * 用于 Connection.onDisconnect 的三星仲裁策略防御：蜂窝来电期间系统
      * 无视 CAPABILITY_SUPPORT_HOLD 先 markCallAsDisconnected 再回调
@@ -1591,7 +1635,7 @@ public final class SdkBridge implements EngineCallback {
     }
 
     /**
-     * 前台化 App（09-21 移植）：蓝牙耳机接听且 App 不在前台时调用。
+     * 前台化 App：蓝牙耳机接听且 App 不在前台时调用。
      * 冷启动场景（FCM 拉起 + 耳机接听）——①通话 UI 不在前台；②Android 15
      * 后台麦克风采集受限（while-in-use），对端听不到我方。此处启动
      * MainActivity 拉回前台（前台后 RN hydrate 自动导航通话页

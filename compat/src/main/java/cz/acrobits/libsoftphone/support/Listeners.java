@@ -67,7 +67,7 @@ public class Listeners {
     }
 
     public interface OnRegistrationStateChanged {
-        void onStateChanged(String accountId, RegistrationState state);
+        void onRegistrationStateChanged(String accountId, RegistrationState state);
     }
 
     public interface OnPushTestArrived {
@@ -219,7 +219,7 @@ public class Listeners {
         dispatch(OnRegistrationStateChanged.class, new Dispatch<OnRegistrationStateChanged>() {
             @Override
             public void dispatch(OnRegistrationStateChanged l) {
-                l.onStateChanged(accountId, state);
+                l.onRegistrationStateChanged(accountId, state);
             }
         });
     }

@@ -12,7 +12,7 @@ import android.os.Looper;
 import java.net.Inet4Address;
 
 /**
- * 网络变化检测（网络切换恢复链的检测端，09-30-android-call-continuity）。
+ * 网络变化检测（网络切换恢复链的检测端）。
  *
  * 三分支换网判定（规格移植自 RN useNetworkRestoreSync，双端语义一致）：
  *   - lost-recovered：全部断网后恢复（断网窗口 TCP 已死，IP 同样必触发）

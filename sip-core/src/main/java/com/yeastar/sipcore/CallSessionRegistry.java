@@ -45,11 +45,6 @@ public class CallSessionRegistry {
         return session;
     }
 
-    /** 按 sessionId 取会话（引擎内部用） */
-    public synchronized CallSession get(long sessionId) {
-        return sessions.get(sessionId);
-    }
-
     /** 按 pjsua callId 检索（callId 无效/-1 时返回 null） */
     public synchronized CallSession findByCallId(int callId) {
         if (callId < 0) {
@@ -63,20 +58,11 @@ public class CallSessionRegistry {
         return null;
     }
 
-    /** 移除会话（引擎已确保 pc 等资源先行释放） */
-    public synchronized CallSession remove(long sessionId) {
-        return sessions.remove(sessionId);
-    }
-
     /** 全部会话（含终态滞留）快照：插入序副本，任意时刻可查 */
     public synchronized List<CallSession> snapshot() {
         return new ArrayList<CallSession>(sessions.values());
     }
 
-    /** 会话总数（含终态滞留） */
-    public synchronized int size() {
-        return sessions.size();
-    }
 
     /** 活动会话数（未终态，容量判定用） */
     public synchronized int activeCount() {

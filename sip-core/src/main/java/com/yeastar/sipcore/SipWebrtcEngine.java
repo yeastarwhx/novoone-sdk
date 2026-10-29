@@ -134,7 +134,7 @@ public class SipWebrtcEngine {
     private boolean started;
     private int accId = -1;
 
-    /* ---------------- 网络切换恢复（09-30-android-call-continuity） ---------------- */
+    /* ------------------------ 网络切换恢复 ------------------------ */
     /** pjsua_ip_change_op 枚举值（pjsua.h）：Java 侧无法引用 C 头，常量
      *  手工对齐（改库枚举须同步此处） */
     private static final int IP_CHANGE_STEP_SHUTDOWN_TP = 1;
@@ -267,16 +267,6 @@ public class SipWebrtcEngine {
     /* ------------------------------------------------------------------ */
     /* 生命周期                                                            */
     /* ------------------------------------------------------------------ */
-
-    /** UDP 便捷重载 */
-    public boolean engineStart(Context context, EngineCallback cb) {
-        return engineStart(context, cb, 0);
-    }
-
-    /** 兼容布尔重载（true=TCP false=UDP），存量调用方过渡用 */
-    public boolean engineStart(Context context, EngineCallback cb, boolean useTcp) {
-        return engineStart(context, cb, useTcp ? 1 : 0);
-    }
 
     /**
      * 初始化 pjsua + WebRTC factory（账号注册另走 accountRegister）。
@@ -434,7 +424,13 @@ public class SipWebrtcEngine {
                         proxy != null ? proxy : "",
                         authUser, displayName, expires);
                 if (accId < 0) {
-                    log("[engine] ys_register_account failed");
+                    /* 失败原因自解释：JNI 层对 server/user/pass 为 NULL 静默
+                     * 返回 -1（不进 pjsip、无库层日志），此处必须打出参数状态 */
+                    log("[engine] ys_register_account failed (server="
+                            + (server == null ? "NULL" : server)
+                            + " user=" + (user == null ? "NULL" : user)
+                            + " pass=" + (pass == null ? "NULL" : "len=" + pass.length())
+                            + ")");
                 } else {
                     log("[engine] registering " + user + " via " + server
                             + (proxy != null && !proxy.isEmpty()

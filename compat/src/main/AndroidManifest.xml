@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- 前台服务类型权限（phoneCall 由宿主 App 声明，此处声明 merge 去重） -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE"/>
+
+    <application>
+
+        <!-- SIP 前台 Service（推送唤醒链路的优雅注销载体，SDK 内置托管） -->
+        <service
+            android:name="com.yeastar.sipcore.SipForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="phoneCall|microphone"/>
+
+    </application>
+
+</manifest>

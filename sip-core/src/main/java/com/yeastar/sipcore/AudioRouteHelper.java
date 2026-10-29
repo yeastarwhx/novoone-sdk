@@ -128,8 +128,8 @@ public final class AudioRouteHelper {
     /**
      * 进入通话音频模式（通话建立时调用）：设置 MODE_IN_COMMUNICATION，
      * 使 VOICE_COMMUNICATION 录音源按通话策略路由/增益。缺此设置时
-     * 听筒模式发送人声极小（三星真机实测：切换扬声器触发
-     * setRoute 内的 setMode 才恢复——2026-09-15 定位）。
+     * 听筒模式发送人声极小（三星真机实测结论：切换扬声器触发的
+     * setRoute 内 setMode 才会恢复）。
      */
     public static void beginCommunicationMode(Context context) {
         AudioManager am = audioManager(context);
@@ -145,7 +145,7 @@ public final class AudioRouteHelper {
     /**
      * 通话建立时的初始路由决策（有线 > 蓝牙 > 听筒），显式设置。
      *
-     * 背景（2026-09-21 三星实测）：部分 OEM 在 Telecom 感知到通话后，会由
+     * 背景（三星真机实测）：部分 OEM 在 Telecom 感知到通话后，会由
      * 系统 BluetoothInCallService 自动激活 HFP SCO（耳机出声），但
      * AudioManager 侧无任何记录（getCommunicationDevice 为空），UI 查询
      * 推导出听筒——显示与实际脱节。此处 App 主动决策并显式设置，
@@ -337,7 +337,7 @@ public final class AudioRouteHelper {
      * 未显式选定路由时的默认推导：有线 > 蓝牙（SCO 实际激活时）> 听筒。
      * 蓝牙分支不限版本：isBluetoothScoOn 反映 SCO 音频链路的实际激活
      * 状态，OEM 侧自动激活（见 applyInitialRoute 注释）同样为 true，
-     * 据此兜底显示（2026-09-21）。
+     * 据此兜底显示。
      */
     @SuppressWarnings("deprecation")
     private static String defaultConnectedRoute(AudioManager am) {

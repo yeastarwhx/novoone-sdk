@@ -377,7 +377,16 @@ public final class Instance {
             return snap != null && snap.username != null && !snap.username.isEmpty() ? 1 : 0;
         }
 
-        /** 按下标取账号（仅 0 有效；构造最小 AccountXml 供读取） */
+        /**
+         * 按下标取账号（仅 0 有效；构造完整 AccountXml——含 password/expires/
+         * transport 等全部注册字段）。
+         *
+         * 字段必须完整：App 的 modifyAccount 是"getAccount → clone → merge →
+         * saveAccount"模式，此处缺字段会被 clone 原样带过、saveAccount 覆盖
+         * 掉账号快照——password 丢失后 FCM 冷唤醒（restore 快照重注册）在
+         * JNI 层静默失败（copy_jstring 对 NULL 返回 -1），服务器不下发
+         * INVITE，推送唤醒来电无声失效。
+         */
         public static AccountXml getAccount(int index) {
             if (index != 0 || getAccountCount() == 0) {
                 return null;
@@ -389,6 +398,34 @@ public final class Instance {
                     snap.id != null ? snap.id : "");
             xml.setChildValue("username", snap.username != null ? snap.username : "");
             xml.setChildValue("host", snap.host != null ? snap.host : "");
+            /* 注册全字段（空值不写——保持缺省字段不落树的形态，也防
+             * expires=0 之类脏值经 modify 链固化） */
+            if (snap.password != null && !snap.password.isEmpty()) {
+                xml.setChildValue("password", snap.password);
+            }
+            if (snap.proxy != null && !snap.proxy.isEmpty()) {
+                xml.setChildValue("outboundProxy_host", snap.proxy);
+            }
+            if (snap.authUser != null && !snap.authUser.isEmpty()) {
+                xml.setChildValue("authUsername", snap.authUser);
+            }
+            if (snap.displayName != null && !snap.displayName.isEmpty()) {
+                xml.setChildValue("displayName", snap.displayName);
+            }
+            if (snap.expires > 0) {
+                xml.setChildValue("expires", String.valueOf(snap.expires));
+            }
+            if (snap.transport != null && !snap.transport.isEmpty()) {
+                xml.setChildValue("transport", snap.transport);
+            }
+            if (snap.pushTokenReporterUrl != null && !snap.pushTokenReporterUrl.isEmpty()) {
+                xml.setChildValue("pushTokenReporterUrl", snap.pushTokenReporterUrl);
+            }
+            if (snap.pushTokenReporterCustomHeaders != null
+                    && !snap.pushTokenReporterCustomHeaders.isEmpty()) {
+                xml.setChildValue("pushTokenReporterCustomHeaders",
+                        snap.pushTokenReporterCustomHeaders);
+            }
             return new AccountXml(xml,
                     cz.acrobits.libsoftphone.mergeable.MergeableNodeAttributes.gui());
         }
@@ -458,9 +495,9 @@ public final class Instance {
         /** 推送子模块 */
         public static final class Push {
 
-            /** FCM token 登记（引擎无推送上报链路，token 由宿主自行上报服务端） */
+            /** FCM token 登记：SDK 存储并上报 uc-push（凭证就绪时；注册成功补报） */
             public static void setRegistrationId(String registrationId) {
-                android.util.Log.d(TAG, "push registrationId recorded (host reports to server)");
+                SdkBridge.get().setPushToken(registrationId);
             }
 
             /** 推送到达：唤醒注册（引擎就绪 + re-REGISTER，携带已注入的

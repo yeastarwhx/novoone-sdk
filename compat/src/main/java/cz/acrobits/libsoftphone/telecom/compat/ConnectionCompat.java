@@ -49,7 +49,7 @@ public final class ConnectionCompat {
 
     /**
      * 引擎状态 → Connection 回写（含本地 hold 映射：Established + hold →
-     * setOnHold，能力位随状态维护）。09-21-android-telecom 移植。
+     * setOnHold，能力位随状态维护）。
      */
     public static void applyCallState(Connection connection,
                                       cz.acrobits.libsoftphone.data.Call.State state,
