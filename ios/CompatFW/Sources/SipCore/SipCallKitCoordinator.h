@@ -58,6 +58,11 @@ typedef NS_ENUM(NSInteger, SipCallKitEndedReason) {
  * pendingReport 登记，防 45s 看门狗误撤活跃会话） */
 - (void)onSessionBound:(NSUUID *)uuid;
 
+/* 注册 200：对仍 pending 的上报缩短撤销窗口（服务器对 push 唤醒注册
+ * 1-3s 内即下发 pending INVITE，主叫提前挂断的来电不再有 INVITE——
+ * 无交互场景的及时收口；弱网注册重试仍由 45s 绝对兜底覆盖） */
+- (void)onRegistered;
+
 #pragma mark - 事件回挂（引擎调用）
 
 /* 引擎 200 发出后 fulfill 挂起的接听动作（防系统 UI 先行显示接通而媒体未立；

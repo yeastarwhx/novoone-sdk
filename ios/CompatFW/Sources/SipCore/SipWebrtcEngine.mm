@@ -2118,6 +2118,9 @@ static void ys_fill_field(char *dst, size_t size, NSString *value)
         /* 注册成功：撤注册监督（net-recovery 兜底若在监督中，一行日志
          * 收口；reg watch tick 的 lastRegStatus 判定由此同源） */
         [self stopRegWatch:YES];
+        /* 注册成功：pending 来电卡片缩短撤销窗口（push 唤醒后 INVITE 下发
+         * 窗口；主叫提前挂断的无 INVITE 来电及时收口） */
+        [_callKitCoordinator onRegistered];
         /* 注册成功时序信号（主线程 post）：push 唤醒链据此撤头——
          * 重试期间粘性三头保留，重试 REGISTER 携带以完成 push 配对 */
         [[NSNotificationCenter defaultCenter]

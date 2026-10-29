@@ -26,8 +26,14 @@
 
 /* 分机号判定（对齐线上 Softphone_Cx_Delegate 正则） */
 static NSString * const kExtensionPattern = @"^[0-9]{1,6}$";
-/* 推送 report 后 INVITE 未到达的兜底撤销（异常矩阵：服务器丢 INVITE） */
+/* 推送 report 后 INVITE 未到达的兜底撤销（异常矩阵：服务器丢 INVITE；
+ * 绝对上限，含弱网注册重试耗时） */
 static NSTimeInterval const kPendingReportWatchdogSec = 45.0;
+/* 注册 200 后 INVITE 下发窗口：push 唤醒注册后服务器立即下发 pending
+ * INVITE（实测 0.5-0.6s 到达），主叫提前挂断（服务器下发前 CANCEL，
+ * 只发 miss push——普通 APNs 通知，SDK 不可见）不再有 INVITE——窗口
+ * 过后仍 pending 的上报以未接撤销；5s = 3s 观测上限 + 服务器抖动余量 */
+static NSTimeInterval const kPostRegisterInviteWindowSec = 5.0;
 /* 接听动作看门狗：CXAnswer 后 200 迟迟未发（SRD/ICE 卡死），收掉系统动作 */
 static NSTimeInterval const kAnswerActionTimeoutSec = 8.0;
 /* 去电动作看门狗：CXStartCallAction 8s 未回调 → 直呼兜底（保通话可用性） */
@@ -214,6 +220,15 @@ static NSString *CallKitReasonName(SipCallKitEndedReason reason)
     }
 }
 
+- (void)onRegistered
+{
+    for (SipPendingReport *entry in [self.pendingReports copy]) {
+        ckLog(@"registered — pending report window shortened (uuid=%@)",
+              entry.uuid.UUIDString);
+        [self armPendingReportWatchdog:entry interval:kPostRegisterInviteWindowSec];
+    }
+}
+
 #pragma mark - 接听动作 fulfill 线（引擎 200 发出/失败回挂）
 
 - (void)onAnswerSentForUuid:(NSUUID *)uuid
@@ -245,6 +260,24 @@ static NSString *CallKitReasonName(SipCallKitEndedReason reason)
     [self cancelAnswerWatchdogForUuid:uuid];
     ckLog(@"pending answer dropped (uuid=%@)", uuid.UUIDString);
     [action fail];
+    /* 会话从未绑定（INVITE 未到）时 answer fail 后系统卡片滞留响铃，
+     * 强制收口（见 endUnboundCallForUuid；已绑定场景登记已消费，no-op） */
+    [self endUnboundCallForUuid:uuid];
+}
+
+/* 会话未绑定 call 的强制收口：answer 被 fail / end action fulfill 之后，
+ * 系统侧 call 实测仍滞留响铃（CallKit 对 fail 过 answer 的 call，end
+ * action fulfill 不撤卡，action 反而 timedOut），reportCallEnded 是唯一
+ * 可靠终结。幂等——无登记时 no-op；有会话路径的终态上报由 sessionEnded
+ * 统一驱动（reason 映射在那里），不经此 */
+- (void)endUnboundCallForUuid:(NSUUID *)uuid
+{
+    if ([self pendingReportForUuid:uuid] == nil) { return; }
+    [self removePendingReportForUuid:uuid];
+    [self.provider reportCallWithUUID:uuid endedAtDate:[NSDate date]
+                                reason:CXCallEndedReasonUnanswered];
+    ckLog(@"unbound call ended (reportCallEnded unanswered, uuid=%@)",
+          uuid.UUIDString);
 }
 
 #pragma mark - 终态上报
@@ -384,10 +417,11 @@ static NSString *CallKitReasonName(SipCallKitEndedReason reason)
         /* 引擎按会话状态分流：振铃中 → 486 拒接；通话中 → BYE/CANCEL */
         [self.engine callEndFromCallKit:callId uuid:action.callUUID];
     } else {
-        /* 会话未绑定（report 后 INVITE 未到即挂）：收登记即可——end action
-         * fulfill 本身即让系统撤卡，无需 reportCallEnded；endActionUuids
-         * 不登记（无会话即无 sessionEnded 消费，登记即泄漏） */
-        [self removePendingReportForUuid:action.callUUID];
+        /* 会话未绑定（report 后 INVITE 未到即拒接/挂断）：fulfill 实测
+         * 不足以撤卡（系统 call 滞留响铃），补 reportCallEnded 强制收口
+         * （无登记时 no-op）；endActionUuids 不登记（无会话即无
+         * sessionEnded 消费，登记即泄漏） */
+        [self endUnboundCallForUuid:action.callUUID];
     }
     [self failPendingAnswerForUuid:action.callUUID];   /* 拒接时挂起 answer 不可能再成功 */
     [action fulfill];
@@ -473,9 +507,16 @@ static NSString *CallKitReasonName(SipCallKitEndedReason reason)
 
 - (void)armPendingReportWatchdog:(SipPendingReport *)entry
 {
+    [self armPendingReportWatchdog:entry interval:kPendingReportWatchdogSec];
+}
+
+- (void)armPendingReportWatchdog:(SipPendingReport *)entry
+                         interval:(NSTimeInterval)interval
+{
     __weak SipCallKitCoordinator *weakSelf = self;
     NSUUID *uuid = entry.uuid;
-    entry.watchdog = [NSTimer scheduledTimerWithTimeInterval:kPendingReportWatchdogSec
+    [entry.watchdog invalidate];   /* 重 arm（注册后缩短窗口）先撤销旧计时 */
+    entry.watchdog = [NSTimer scheduledTimerWithTimeInterval:interval
                                                       repeats:NO
                                                         block:^(NSTimer *timer) {
         SipCallKitCoordinator *strongSelf = weakSelf;
@@ -483,8 +524,8 @@ static NSString *CallKitReasonName(SipCallKitEndedReason reason)
         [strongSelf removePendingReportForUuid:uuid];
         [strongSelf.provider reportCallWithUUID:uuid endedAtDate:[NSDate date]
                                           reason:CXCallEndedReasonUnanswered];
-        ckLog(@"pending report watchdog: INVITE 未达 45s，撤销卡片 (uuid=%@)",
-              uuid.UUIDString);
+        ckLog(@"pending report watchdog: INVITE 未达（%.0fs 窗口），撤销卡片 (uuid=%@)",
+              interval, uuid.UUIDString);
     }];
 }
 
