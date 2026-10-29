@@ -1,0 +1,18 @@
+// 显式 modulemap(替代 Xcode 自动生成版):自动版只列 Swift 生成头,
+// 引擎 ObjC 头不在 module 内——Swift(underlying module)看不到
+// SipWebrtcEngine 等类型。此处把引擎头纳入。
+// 注意:Swift 生成头(Softphone_Swift.h)不列——它在 Swift 编译后才生成,
+// 列入会令 underlying module 构建失败(鸡生蛋);该头仍由
+// SWIFT_INSTALL_OBJC_HEADER 拷入 Headers/,App 经
+// #import <Softphone_Swift/Softphone_Swift.h>(文件路径)与
+// import Softphone_Swift(swiftmodule)两路消费不受影响。
+// CompatUmbrella.h:module 层 UIKit 传播(对齐 Acrobits umbrella 的
+// #import <UIKit/UIKit.h>,App 无 import 的 Swift 文件靠它取 UIKit/UN* 符号)。
+framework module Softphone_Swift {
+    header "SipWebrtcEngine.h"
+    header "SipCallSession.h"
+    header "SipCoreLogger.h"
+    header "SipEngineCallback.h"
+    header "CompatUmbrella.h"
+    export *
+}
