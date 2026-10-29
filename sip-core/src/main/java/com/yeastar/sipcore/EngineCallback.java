@@ -33,4 +33,11 @@ public interface EngineCallback {
      * level<=3 的关键日志，全量日志走 logcat。
      */
     void onLog(int level, String msg);
+
+    /**
+     * 网络切换事件（防抖后，reason 为 "类型|IP" 形态，如 "wifi|10.0.0.2"）。
+     * 引擎内部已同时触发信令+媒体恢复链，本回调供上层做业务标记
+     * （如换网 re-INVITE 的自定义头注入）。
+     */
+    void onNetworkChanged(String reason);
 }

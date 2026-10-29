@@ -628,8 +628,21 @@ public class SipWebrtcEngine {
         if (s.offerSdp == null || s.offerSdp.isEmpty()) {
             log("[engine] answer: offer missing -> reject 486");
             /* 呼入 offer 损坏/缺失：ys_reject_call 固定发 486 Decline
-             * （语义等价"拒接"，服务器侧都按被叫拒绝收口） */
-            JniBridge.nativeRejectCall(callId);
+             * （语义等价"拒接"，服务器侧都按被叫拒绝收口）。收口对齐
+             * rejectInternal：置 rejectRequested + 停铃声 + 视图乐观终态
+             * ——防迟到的 DISCONNECTED 被 computeViewState 映射为
+             * IncomingMissed（"已接听却显示未接"非法序列），且铃声不得
+             * 响到对端取消 */
+            s.rejectRequested = true;
+            RingtoneHelper.stopRingtone();
+            if (JniBridge.nativeRejectCall(callId) != 0) {
+                log("[ys] ys_reject_call failed");
+                s.rejectRequested = false;
+                return false;
+            }
+            s.callStateView = CallSession.STATE_INCOMING_REJECTED;
+            onSessionTerminated(s);
+            notifySessionChanged(s);
             return false;
         }
 
@@ -1041,6 +1054,27 @@ public class SipWebrtcEngine {
      * 静音/取消静音：本地 track.setEnabled（不发 re-INVITE，对齐 Acrobits
      * 语义）；与 hold 叠加时 track 使能 = !mute && !hold。
      */
+    /**
+     * 会话级静音置位（SdkBridge 全局静音镜像用）：callId 尚未分配的
+     * 新会话（呼出 INVITE 未发/来电刚到）按 sessionId 定位。track 未建
+     * 时仅置 muteFlag——createAudioTrack 后的 applyTrackEnabled 消费。
+     */
+    public void setSessionMute(final long sessionId, final boolean muted) {
+        runOnMain(new Runnable() {
+            @Override
+            public void run() {
+                for (CallSession s : registry.snapshot()) {
+                    if (s.sessionId == sessionId && s.muteFlag != muted) {
+                        s.muteFlag = muted;
+                        applyTrackEnabled(s);
+                        notifySessionChanged(s);
+                        return;
+                    }
+                }
+            }
+        });
+    }
+
     public void callMute(final long callId, final boolean muted) {
         runOnMain(new Runnable() {
             @Override
@@ -1815,6 +1849,18 @@ public class SipWebrtcEngine {
     private void handleNetworkChanged(String reason) {
         if (!started) {
             return;
+        }
+        /* 换网事件上抛（Listeners.OnNetworkChangeDetected 通道：App 侧
+         * 据此注入 X-NetworkChanged INVITE 头标记换网 re-INVITE） */
+        if (callback != null) {
+            post(new Runnable() {
+                @Override
+                public void run() {
+                    if (callback != null) {
+                        callback.onNetworkChanged(reason);
+                    }
+                }
+            });
         }
         if (netRecoveryRunning) {
             /* 单飞：本轮进行中，标记重跑（双网竞态残余连发合并为

@@ -29,6 +29,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import cz.acrobits.ali.AndroidUtil;
 import cz.acrobits.libsoftphone.data.AudioRoute;
 import cz.acrobits.libsoftphone.data.Call;
+import cz.acrobits.libsoftphone.NetworkType;
 import cz.acrobits.libsoftphone.data.RegistrationState;
 import cz.acrobits.libsoftphone.event.CallEvent;
 import cz.acrobits.libsoftphone.event.Event;
@@ -239,12 +240,10 @@ public final class SdkBridge implements EngineCallback {
         /* 去电 Telecom 上报延迟到对方振铃/接听时（onCallSessionChanged 的
          * Trying/Ringing 观测点）——postCallEvent 时通话未建立，立即上报
          * 会被系统清理（ConnectionService 3ms 即 destroy）*/
-        /* 全局静音镜像应用到新会话 */
+        /* 全局静音镜像应用到新会话：callMake 返回时 INVITE 尚未提交、
+         * callId 恒 -1，须按 sessionId 置 muteFlag（track 建立时消费） */
         if (mMuted) {
-            CallSession s = findSession(sessionId);
-            if (s != null && s.callId >= 0) {
-                mEngine.callMute(s.callId, true);
-            }
+            mEngine.setSessionMute(sessionId, true);
         }
         return true;
     }
@@ -379,6 +378,11 @@ public final class SdkBridge implements EngineCallback {
     public void onIncomingCall(CallSession session) {
         CallEvent event = wrapEvent(session);
 
+        /* 全局静音镜像：来电同样继承（App 契约 Audio.isMuted 全局语义） */
+        if (mMuted) {
+            mEngine.setSessionMute(session.sessionId, true);
+        }
+
         /* observer 自定义铃声：取到即停引擎默认铃声改播 observer 铃声
          * （音量键静音链路：NovoSilenceInterceptor 停的就是这只会话铃声） */
         Listeners observer = mObserver;
@@ -456,6 +460,11 @@ public final class SdkBridge implements EngineCallback {
                         new Call.HoldStates(
                                 local ? Call.HoldState.Held : null,
                                 remote ? Call.HoldState.Held : null));
+                /* hold 变化伴随媒体状态变化（codec/方向），一并分发 */
+                try {
+                    observer.dispatchMediaStatusChanged(event);
+                } catch (Throwable ignored) {
+                }
             }
         }
 
@@ -546,6 +555,34 @@ public final class SdkBridge implements EngineCallback {
     @Override
     public void onLog(int level, String msg) {
         appendLog(msg);
+    }
+
+    /**
+     * 网络切换（引擎防抖后主线程）：分发 OnNetworkChangeDetected——App
+     * 侧据此对进行中通话注入 X-NetworkChanged INVITE 头（服务器识别
+     * 换网 re-INVITE）。reason 形如 "wifi|10.0.0.2"。
+     */
+    @Override
+    public void onNetworkChanged(String reason) {
+        Listeners observer = mObserver;
+        if (observer == null) {
+            return;
+        }
+        String head = reason != null && reason.indexOf('|') > 0
+                ? reason.substring(0, reason.indexOf('|')) : "";
+        NetworkType type;
+        if ("wifi".equals(head)) {
+            type = NetworkType.WIFI;
+        } else if ("cell".equals(head)) {
+            type = NetworkType.MOBILE;
+        } else {
+            type = NetworkType.UNKNOWN;
+        }
+        try {
+            observer.dispatchNetworkChangeDetected(type);
+        } catch (Throwable t) {
+            android.util.Log.w(TAG, "dispatchNetworkChangeDetected failed: " + t);
+        }
     }
 
     /* ------------------------------------------------------------------ */
@@ -1584,6 +1621,27 @@ public final class SdkBridge implements EngineCallback {
         if (observer != null) {
             try {
                 observer.dispatchAudioRouteChanged(AudioRoute.valueOf(route));
+            } catch (Throwable ignored) {
+            }
+            /* 系统路由事实变化时可用路由集合随之变化（蓝牙连接/断开等），
+             * 一并分发 */
+            try {
+                java.util.List<AudioRoute> available = new java.util.ArrayList<AudioRoute>();
+                int mask = CallAudioState.ROUTE_SPEAKER | CallAudioState.ROUTE_BLUETOOTH
+                        | CallAudioState.ROUTE_WIRED_HEADSET | CallAudioState.ROUTE_EARPIECE;
+                for (int r = 1; r <= mask; r <<= 1) {
+                    if ((state.getSupportedRouteMask() & r) != 0) {
+                        String name = stringRouteOf(r);
+                        if (name != null) {
+                            try {
+                                available.add(AudioRoute.valueOf(name));
+                            } catch (IllegalArgumentException ignored) {
+                            }
+                        }
+                    }
+                }
+                observer.dispatchAudioAvailableRoutesChanged(
+                        available.toArray(new AudioRoute[0]));
             } catch (Throwable ignored) {
             }
         }
