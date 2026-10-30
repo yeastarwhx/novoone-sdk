@@ -1390,6 +1390,18 @@ static void ys_fill_field(char *dst, size_t size, NSString *value)
 
 #pragma mark - 呼叫操作
 
+- (BOOL)hasAnySession
+{
+    return [self.registry snapshot].count > 0;
+}
+
+- (void)setCallsInRecentsEnabled:(BOOL)enabled
+{
+    [self runOnMain:^{
+        [self.callKitCoordinator setCallsInRecentsEnabled:enabled];
+    }];
+}
+
 /* 呼出链（安卓 callMake:457-488 + startOutgoingCall:491-536）：
  * registry.create(OUT) → X-Request-ID 头注入 → PC 建立 → createOffer
  * → SLD → gather 看门狗(双窗：800ms 兜底/候选后 150ms) → ys_make_call_with_sdp（callId 回填，

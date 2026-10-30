@@ -21,6 +21,7 @@
 #import <CallKit/CallKit.h>
 
 #import "SipCallSession.h"
+#import "SipCallSessionRegistry.h"
 #import "SipCoreLogger.h"
 #import "SipWebrtcEngine.h"
 
@@ -85,6 +86,10 @@ static NSString *CallKitReasonName(SipCallKitEndedReason reason)
 /* 已 fulfill 的 CXEndCallAction 的 uuid（用户经系统卡片拒接/挂断——系统侧
  * 已收口，sessionEnded 不再 reportCallEnded 重复上报） */
 @property (nonatomic, strong) NSMutableSet<NSUUID *> *endActionUuids;
+/* 系统通话记录开关（SoftphonePreferences.includesCallKitCallsInRecent 落点）：
+ * enabled = 目标值，providerInRecents = 现 provider configuration 值 */
+@property (nonatomic, assign) BOOL callsInRecentsEnabled;
+@property (nonatomic, assign) BOOL providerCallsInRecents;
 @end
 
 @implementation SipCallKitCoordinator
@@ -103,16 +108,9 @@ static NSString *CallKitReasonName(SipCallKitEndedReason reason)
         _startWatchdogs = [[NSMutableDictionary alloc] init];
         _endActionUuids = [[NSMutableSet alloc] init];
 
-        CXProviderConfiguration *config = [[CXProviderConfiguration alloc] init];
-        config.supportsVideo = NO;
-        config.maximumCallGroups = 1;
-        config.maximumCallsPerCallGroup = 1;
-        config.supportedHandleTypes = [NSSet setWithObjects:
-                                       @(CXHandleTypeGeneric), @(CXHandleTypePhoneNumber), nil];
-        config.includesCallsInRecents = YES;   /* 系统通话记录（AC-6 回拨） */
-        /* 图标：iOS 14 起 config.icon 移除（iOS 26 SDK 无该属性），系统卡片
-         * 回落 App 图标；iconTemplateImageData 需 40pt 模板位图，接入期
-         * 暂不设置（默认回落 App 图标） */
+        _callsInRecentsEnabled = YES;
+        _providerCallsInRecents = YES;
+        CXProviderConfiguration *config = [self providerConfigurationWithCallsInRecents:_callsInRecentsEnabled];
         ckLog(@"coordinator ready (icon=app default)");
 
         _provider = [[CXProvider alloc] initWithConfiguration:config];
@@ -130,12 +128,78 @@ static NSString *CallKitReasonName(SipCallKitEndedReason reason)
     self.startWatchdogs = nil;
 }
 
+/* provider 配置（唯一构造点——init 与运行期重建共用）。
+ * 图标：iOS 14 起 config.icon 移除（iOS 26 SDK 无该属性），系统卡片
+ * 回落 App 图标；iconTemplateImageData 需 40pt 模板位图，接入期
+ * 暂不设置（默认回落 App 图标） */
+- (CXProviderConfiguration *)providerConfigurationWithCallsInRecents:(BOOL)inRecents
+{
+    CXProviderConfiguration *config = [[CXProviderConfiguration alloc] init];
+    config.supportsVideo = NO;
+    config.maximumCallGroups = 1;
+    config.maximumCallsPerCallGroup = 1;
+    config.supportedHandleTypes = [NSSet setWithObjects:
+                                   @(CXHandleTypeGeneric), @(CXHandleTypePhoneNumber), nil];
+    config.includesCallsInRecents = inRecents;   /* 系统通话记录（AC-6 回拨） */
+    return config;
+}
+
+#pragma mark - 系统通话记录开关（provider 重建线）
+
+- (void)setCallsInRecentsEnabled:(BOOL)enabled
+{
+    _callsInRecentsEnabled = enabled;
+    [self rebuildProviderIfNeeded];
+}
+
+/* 目标值 != provider 现值且无活跃通话时重建 provider（includesCallsInRecents
+ * 只能在 configuration 上定，无热改 API）。活跃通话期间挂起，由下一通
+ * report/start 入口重试——期间终态 linger 会话也计入活跃（其
+ * reportCallEnded 仍走旧 provider 引用，重建会丢失上报通道） */
+- (void)rebuildProviderIfNeeded
+{
+    if (self.callsInRecentsEnabled == self.providerCallsInRecents) { return; }
+    if (![self canRebuildProvider]) {
+        ckLog(@"calls-in-recents %d deferred (active calls)", self.callsInRecentsEnabled);
+        return;
+    }
+    self.provider = [[CXProvider alloc] initWithConfiguration:
+        [self providerConfigurationWithCallsInRecents:self.callsInRecentsEnabled]];
+    [self.provider setDelegate:self queue:dispatch_get_main_queue()];
+    self.providerCallsInRecents = self.callsInRecentsEnabled;
+    ckLog(@"provider rebuilt (callsInRecents=%d)", self.callsInRecentsEnabled);
+}
+
+- (BOOL)canRebuildProvider
+{
+    return ![self.engine hasAnySession]
+        && self.pendingReports.count == 0
+        && self.pendingAnswers.count == 0
+        && self.pendingStartBlocks.count == 0;
+}
+
+/* 会话终态后在 linger 过期点复查一次重建：来电（handleIncomingSdp）与
+ * 呼出（callOut）都是先建会话再进 report/start 入口，入口重试在这些
+ * 路径恒遇活跃会话——挂起的开关变更依赖本复查在"通话结束 → linger
+ * 清除"后的空窗生效。幂等：值未变/仍有通话则 no-op；复查时又有新通话
+ * 则其自身 sessionEnded 会再排 */
+- (void)scheduleProviderRebuildAfterLinger
+{
+    dispatch_after(
+        dispatch_time(DISPATCH_TIME_NOW,
+            (SipCallSessionRegistry.terminalLingerMs + 1000) * NSEC_PER_MSEC),
+        dispatch_get_main_queue(), ^{
+            [self rebuildProviderIfNeeded];
+        });
+}
+
 #pragma mark - 来电上报（PushKit 红线路径）
 
 - (NSUUID *)reportIncomingCall:(NSUUID *)uuid
                     callerName:(NSString *)callerName
                   callerNumber:(NSString *)callerNumber
 {
+    [self rebuildProviderIfNeeded];
     NSUUID *callUuid = (uuid != nil) ? uuid : [NSUUID UUID];
     NSString *name = [self trimmedString:callerName];
     NSString *number = [self trimmedString:callerNumber];
@@ -298,6 +362,7 @@ static NSString *CallKitReasonName(SipCallKitEndedReason reason)
 {
     NSUUID *uuid = session.callKitUuid;
     if (uuid == nil) { return; }
+    [self scheduleProviderRebuildAfterLinger];
     [self failPendingAnswerForUuid:uuid];
     [self cancelStartWatchdogForUuid:uuid];
     /* 用户经系统卡片拒接/挂断（CXEndCallAction 已 fulfill）：系统侧已收口，
@@ -345,6 +410,7 @@ static NSString *CallKitReasonName(SipCallKitEndedReason reason)
         requestId:(NSString *)requestId
     makeCallBlock:(void (^)(NSUUID *))onActionFulfilled
 {
+    [self rebuildProviderIfNeeded];
     NSUUID *uuid = [NSUUID UUID];
     NSString *address = [self trimmedString:number];
     CXStartCallAction *action =
@@ -592,6 +658,13 @@ static NSString *CallKitReasonName(SipCallKitEndedReason reason)
     [entry.watchdog invalidate];
     entry.watchdog = nil;
     [self.pendingReports removeObject:entry];
+    /* 最后一笔 pending 撤销（watchdog 超时/窗口收口/系统拒接/report 失败）
+     * 且无会话时是 provider 重建空窗——冷启动 PushKit report 后才收到
+     * 偏好覆盖的场景在此恢复。会话先行路径的撤销为 no-op（复查时仍有
+     * 会话，其 sessionEnded 自会再排） */
+    if (self.pendingReports.count == 0) {
+        [self scheduleProviderRebuildAfterLinger];
+    }
 }
 
 #pragma mark - 工具

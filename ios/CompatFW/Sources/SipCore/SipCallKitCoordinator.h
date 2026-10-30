@@ -63,6 +63,13 @@ typedef NS_ENUM(NSInteger, SipCallKitEndedReason) {
  * 无交互场景的及时收口；弱网注册重试仍由 45s 绝对兜底覆盖） */
 - (void)onRegistered;
 
+/* 系统通话记录开关（SoftphonePreferences.includesCallKitCallsInRecent
+ * 落点）：目标值与 provider 现值不一致且无活跃通话（引擎会话/pending
+ * 上报/挂起动作全空）时重建 provider 生效；有活跃通话时挂起，下一通
+ * report/start 入口重试——已 report 通话的记录行为本就由 report 时的
+ * configuration 决定，无需打断进行中的通话 */
+- (void)setCallsInRecentsEnabled:(BOOL)enabled;
+
 #pragma mark - 事件回挂（引擎调用）
 
 /* 引擎 200 发出后 fulfill 挂起的接听动作（防系统 UI 先行显示接通而媒体未立；

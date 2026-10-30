@@ -178,6 +178,14 @@ typedef NS_ENUM(NSInteger, SipCallPjsuaState) {
 
 /* ---------------- 呼叫操作 ---------------- */
 
+/* 是否存在通话会话（含终态 linger——registry 非空即算；CallKit 层判定
+ * provider 能否重建用）。主线程限定（registry 契约） */
+- (BOOL)hasAnySession;
+
+/* 系统通话记录开关（SoftphonePreferences.includesCallKitCallsInRecent 落点，
+ * 转投主线程后转发 CallKit coordinator；非主线程调用安全） */
+- (void)setCallsInRecentsEnabled:(BOOL)enabled;
+
 /* 呼出（requestId 注入 INVITE X-Request-ID 头，一次性消费） */
 - (void)callMake:(NSString *)number requestId:(nullable NSString *)requestId;
 

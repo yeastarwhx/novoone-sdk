@@ -159,4 +159,11 @@ import Foundation
     public var volumeBoostPlayback: Int32 = 0
     public var userAgentOverride: String?
     public var useCallKit = true
+
+    /// 系统通话记录同步（App 默认关闭语义：冷启动 UserDefaults 覆盖）。
+    /// 赋值即时下发引擎：无活跃通话时重建 CallKit provider 生效，有则
+    /// 挂起至下一通电话前
+    public var includesCallKitCallsInRecent = true {
+        didSet { SipWebrtcEngine.shared().setCallsInRecentsEnabled(includesCallKitCallsInRecent) }
+    }
 }
