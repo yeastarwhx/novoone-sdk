@@ -22,6 +22,15 @@
 #define PJSIP_HAS_TLS_TRANSPORT 1
 #endif
 #define PJ_HAS_IPV6 1
+/* WebRTC SDP passthrough: offer/answer with full ICE candidates routinely
+ * exceeds the upstream default 4000-byte packet buffer (observed 3381-byte
+ * SDP + headers -> PJSIP_EMSGTOOLONG on outgoing INVITE over TCP).
+ * Trade-off (accepted): deployments are TLS/TCP signaling; on a UDP fallback
+ * >MTU messages now leave IP-fragmented (NAT/carrier may drop them) instead
+ * of failing fast with EMSGTOOLONG. Also +12KB per rx/tx buffer. */
+#ifndef PJSIP_MAX_PKT_LEN
+#define PJSIP_MAX_PKT_LEN 16384
+#endif
 
 #if defined(PJ_CONFIG_IPHONE)
   /* iOS (PJ_CONFIG_IPHONE is injected via cross-compile CFLAGS) */

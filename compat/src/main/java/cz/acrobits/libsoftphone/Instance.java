@@ -19,7 +19,6 @@ import cz.acrobits.libsoftphone.data.Call;
 import cz.acrobits.libsoftphone.data.CallStatistics;
 import cz.acrobits.libsoftphone.data.MediaStatus;
 import cz.acrobits.libsoftphone.data.NetworkStatus;
-import cz.acrobits.libsoftphone.data.SipHeader;
 import cz.acrobits.libsoftphone.event.CallEvent;
 import cz.acrobits.libsoftphone.event.Event;
 import cz.acrobits.libsoftphone.event.MessageEvent;
@@ -290,13 +289,14 @@ public final class Instance {
          * 查询收到的 SIP 头（来电 INVITE 头缓存；接通后对话框切换不可再读，
          * App 在 IncomingRinging 时把头值写入 transients 供接通后读取）。
          */
-        public static SipHeader findSipHeader(CallEvent event, String name) {
+        public static cz.acrobits.ali.Xml findSipHeader(CallEvent event, String name) {
             CallSession s = session(event);
             if (s == null || s.callId < 0 || name == null) {
                 return null;
             }
             String value = bridge().engine().callGetHeader(s.callId, name);
-            return value != null ? new SipHeader(name, value) : null;
+            return value != null
+                    ? new cz.acrobits.ali.Xml("header").setValue(value) : null;
         }
     }
 
@@ -369,6 +369,45 @@ public final class Instance {
         /** 删除账号（注销 + 清持久化） */
         public static void deleteAccount(String accountId) {
             bridge().clearAccount();
+        }
+
+        /**
+         * 按账户 id 直取（id 不存在返回 null）。
+         *
+         * App 防删号竞态调用面：index 两步取（count + getAccount(i)）在本
+         * 回调线程与删账户操作并发时会拿到失效 index，native 层 SIGSEGV
+         * ——id 直取天然无此问题（对齐 Acrobits 原生重载与 iOS 语义）。
+         */
+        public static AccountXml getAccount(String accountId) {
+            if (accountId == null || accountId.isEmpty()) {
+                return null;
+            }
+            SdkBridge.AccountSnapshot snap = bridge().accountSnapshot();
+            if (snap != null && accountId.equals(snap.id)) {
+                return getAccount(0);
+            }
+            return null;
+        }
+
+        /**
+         * 全部账户 id 数组（App 遍历后按 id 直取；单账号引擎 0/1 元素）。
+         */
+        public static String[] getAccounts() {
+            int count = getAccountCount();
+            if (count == 0) {
+                return new String[0];
+            }
+            SdkBridge.AccountSnapshot snap = bridge().accountSnapshot();
+            return snap != null && snap.id != null
+                    ? new String[]{snap.id} : new String[0];
+        }
+
+        /**
+         * 默认账户（无账户返回 null；返回完整配置树）。
+         * App 的 null 安全取用调用面（替代 count>0 + getAccount(0) 两步取）。
+         */
+        public static AccountXml getDefaultAccount() {
+            return getAccountCount() > 0 ? getAccount(0) : null;
         }
 
         /** 账号数（单账号引擎：0 或 1） */

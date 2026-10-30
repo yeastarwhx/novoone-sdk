@@ -84,6 +84,18 @@ public class Xml {
     }
 
     /** 同名子节点值（子值表缺失时查子节点表） */
+    /* 节点自身文本值（SIP 头等"名-值"节点形态；子节点访问走 getValue(name)） */
+    private String mTextValue;
+
+    public Xml setValue(String value) {
+        mTextValue = value;
+        return this;
+    }
+
+    public String getValue() {
+        return mTextValue;
+    }
+
     public String getValue(String name) {
         String v = getChildValue(name);
         if (v != null) {

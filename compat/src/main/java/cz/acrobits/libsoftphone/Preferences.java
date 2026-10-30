@@ -35,6 +35,11 @@ public class Preferences {
                 mValue = value;
             }
         }
+
+        /** 清除当前值恢复默认（App 启动清理历史残留写入用；内存实现即置 null） */
+        public void reset() {
+            mValue = null;
+        }
     }
 
     /** 流量日志（详细 SIP 消息日志开关；本引擎记录即生效） */
