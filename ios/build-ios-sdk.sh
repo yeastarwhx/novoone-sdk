@@ -8,22 +8,21 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 FW_DIR="$HERE/CompatFW"
 VENDOR="$FW_DIR/Vendor"
 BINARIES="$HERE/SoftphoneCompat/Binaries"
-PJ_LIB_SRC_DEFAULT="/Users/lzj/Desktop/novosdk/novoone-app/ios/SipCore/pjsip-ios/lib"
-WEBRTC_SRC_DEFAULT="/Users/lzj/Desktop/novosdk/novoone-app/ios/SipCore/Frameworks/WebRTC.xcframework"
+PJ_LIB_SRC_DEFAULT="/Users/lzj/Desktop/novosdk/novoone-app-sip/demo/libs"
+WEBRTC_SRC_DEFAULT="/Users/lzj/Desktop/novosdk/webrtc_checkout/src/out_ios_libs/WebRTC.xcframework"
 
 REBUILD_LIB=0
 WEBRTC_SRC="$WEBRTC_SRC_DEFAULT"
+WEBRTC_SRC_EXPLICIT=0
 SWITCH_NATIVE=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --rebuild-lib) REBUILD_LIB=1; shift ;;
-    --with-webrtc-src) WEBRTC_SRC="$2"; shift 2 ;;
+    --with-webrtc-src) WEBRTC_SRC="$2"; WEBRTC_SRC_EXPLICIT=1; shift 2 ;;
     --switch-native) SWITCH_NATIVE=1; shift ;;
     *) echo "unknown arg: $1"; exit 1 ;;
   esac
 done
-
-[[ -d "$WEBRTC_SRC" ]] || { echo "ERROR: WebRTC.xcframework not found: $WEBRTC_SRC (use --with-webrtc-src)"; exit 1; }
 
 echo "==> [1/5] pjsip 合并静态库"
 if [[ $REBUILD_LIB -eq 1 || ! -f "$VENDOR/libpjsip-combined.a" ]]; then
@@ -35,11 +34,17 @@ else
 fi
 
 echo "==> [2/5] WebRTC.xcframework 就位"
-if [[ ! -d "$VENDOR/WebRTC.xcframework" ]]; then
+if [[ -d "$VENDOR/WebRTC.xcframework" ]]; then
+  echo "    present ($(du -sh "$VENDOR/WebRTC.xcframework" | cut -f1))"
+  if [[ $WEBRTC_SRC_EXPLICIT -eq 1 ]]; then
+    echo "    WARNING: --with-webrtc-src ignored (Vendor already present) —"
+    echo "    rm -rf '$VENDOR/WebRTC.xcframework' first to force refresh from: $WEBRTC_SRC"
+  fi
+elif [[ -d "$WEBRTC_SRC" ]]; then
   cp -R "$WEBRTC_SRC" "$VENDOR/"
   echo "    copied from $WEBRTC_SRC"
 else
-  echo "    present ($(du -sh "$VENDOR/WebRTC.xcframework" | cut -f1))"
+  echo "ERROR: WebRTC.xcframework not found: $WEBRTC_SRC (use --with-webrtc-src)"; exit 1
 fi
 
 echo "==> [3/5] 生成工程(pbxproj 自动发现源文件)"
