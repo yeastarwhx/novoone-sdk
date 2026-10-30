@@ -1,14 +1,14 @@
 #!/bin/bash
-# novoone-sdk 构建并同步 AAR 到 novoone-app（Android 模块在 android/ 子目录）
-# 用法: cd /home/work/novoone-sdk && ./build-and-sync.sh [APP_PATH]
+# Android SDK 构建并同步 AAR 到 novoone-app（与 ios/build-ios-sdk.sh 对称）
+# 用法: cd /home/work/novoone-sdk/android && ./build-and-sync.sh [APP_PATH]
 
 set -e
 
-SDK_DIR="$(cd "$(dirname "$0")" && pwd)"
+SDK_ANDROID_DIR="$(cd "$(dirname "$0")" && pwd)"
 APP_DIR="${1:-/home/work/novoone-app/android}"
 
 echo "=== 构建 AAR ==="
-cd "$SDK_DIR/android"
+cd "$SDK_ANDROID_DIR"
 ./gradlew :compat:assembleRelease :sip-core:assembleRelease --console=plain
 
 echo "=== 同步到 App ==="
