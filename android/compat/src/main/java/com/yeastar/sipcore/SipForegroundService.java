@@ -35,23 +35,23 @@ public class SipForegroundService extends Service {
 
     private static final String CHANNEL_ID = "sip_service_channel";
 
-    /** 已请求启动（onStartCommand 前的重复 startForegroundService 抑制） */
-    private static volatile boolean sStartRequested;
+    /** 已请求启动（CAS 抑制并发双发；失败/销毁复位） */
+    private static final java.util.concurrent.atomic.AtomicBoolean sStartRequested =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
 
     /** 启动前台 Service（幂等）。调用方须在 App 前台或 FCM 处理豁免窗口
      *  （Android 12+ 后台 FGS 启动限制），失败仅记日志不影响主流程，
      *  下次注册成功时机重试 */
     public static void start() {
-        if (sStartRequested) {
+        if (!sStartRequested.compareAndSet(false, true)) {
             return;
         }
         try {
             Context ctx = cz.acrobits.ali.AndroidUtil.getApplicationContext();
             ctx.startForegroundService(new Intent(ctx, SipForegroundService.class));
-            sStartRequested = true;
         } catch (Throwable t) {
             android.util.Log.w(TAG, "start failed (background FGS restriction?): " + t);
-            sStartRequested = false;
+            sStartRequested.set(false);
         }
     }
 
@@ -62,7 +62,7 @@ public class SipForegroundService extends Service {
             ctx.stopService(new Intent(ctx, SipForegroundService.class));
         } catch (Throwable ignored) {
         }
-        sStartRequested = false;
+        sStartRequested.set(false);
     }
 
     @Override
@@ -146,7 +146,7 @@ public class SipForegroundService extends Service {
 
     @Override
     public void onDestroy() {
-        sStartRequested = false;
+        sStartRequested.set(false);
         super.onDestroy();
     }
 

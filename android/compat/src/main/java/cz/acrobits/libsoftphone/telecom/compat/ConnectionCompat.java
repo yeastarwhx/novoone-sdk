@@ -41,12 +41,6 @@ public final class ConnectionCompat {
         return new AudioRoutingHandle(connection);
     }
 
-    /** 引擎状态 → Connection 回写（包私有层级类的对外通道；无 hold 信息） */
-    public static void applyCallState(Connection connection,
-                                      cz.acrobits.libsoftphone.data.Call.State state) {
-        applyCallState(connection, state, false);
-    }
-
     /**
      * 引擎状态 → Connection 回写（含本地 hold 映射：Established + hold →
      * setOnHold，能力位随状态维护）。

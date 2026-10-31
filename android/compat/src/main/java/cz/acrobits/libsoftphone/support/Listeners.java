@@ -102,12 +102,6 @@ public class Listeners {
         }
     }
 
-    /** 已注册监听快照（内部/诊断用） */
-    public List<Object> registered() {
-        synchronized (mRegistered) {
-            return new CopyOnWriteArrayList<Object>(mRegistered);
-        }
-    }
 
     /** 自定义来电铃声（子类覆盖；SDK 引擎侧来电时调用取铃声，null = 引擎默认铃声） */
     public Ringtone getRingtone(CallEvent call) {

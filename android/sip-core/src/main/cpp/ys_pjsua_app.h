@@ -232,7 +232,14 @@ int ys_set_register_headers(const char *headers);
 /*
  * 用 WebRTC 生成的新 offer SDP 发起 re-INVITE（hold/resume）。
  */
-int ys_reinvite_with_sdp(pjsua_call_id call_id, const char *sdp_str);
+/*
+ * 用新 SDP 发 re-INVITE（hold/resume、网络切换媒体重建共用出口）。
+ * headers 为附加自定义头（"Name: Value\n" 多行，如 X-REQUEST-ID 沿用与
+ * X-NetworkChanged 换网标志；NULL/空 = 无附加）。解析失败按无附加头
+ * 继续——re-INVITE 不因自定义头异常而阻断。
+ */
+int ys_reinvite_with_sdp(pjsua_call_id call_id, const char *sdp_str,
+			 const char *headers);
 
 /*
  * 盲转（SIP REFER）：把 call_id 通话转给 dst_number（纯号码或完整 URI，

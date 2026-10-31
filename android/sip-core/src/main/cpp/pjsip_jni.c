@@ -673,14 +673,17 @@ Java_com_yeastar_sipcore_JniBridge_nativeSetOutgoingInviteHeaders(JNIEnv *env,
     return (jint)ys_set_outgoing_invite_headers(buf);
 }
 
-/* 用新 offer SDP 发 re-INVITE（hold/resume），与 answer 同拷贝模式 */
+/* 用新 offer SDP 发 re-INVITE（hold/resume/换网）。headers 为附加
+ * 自定义头（"Name: Value\n" 多行；NULL = 无），随 re-INVITE 携带 */
 JNIEXPORT jint JNICALL
 Java_com_yeastar_sipcore_JniBridge_nativeReinviteCall(JNIEnv *env,
                                                       jclass clazz,
                                                       jint call_id,
-                                                      jstring sdp)
+                                                      jstring sdp,
+                                                      jstring headers)
 {
     char *sdp_buf;
+    char hdr_buf[1024];
     const char *cs;
     jsize sdp_len;
     int rc;
@@ -703,7 +706,12 @@ Java_com_yeastar_sipcore_JniBridge_nativeReinviteCall(JNIEnv *env,
     sdp_buf[sdp_len] = '\0';
     (*env)->ReleaseStringUTFChars(env, sdp, cs);
 
-    rc = ys_reinvite_with_sdp((pjsua_call_id)call_id, sdp_buf);
+    hdr_buf[0] = '\0';
+    if (headers != NULL) {
+        copy_jstring(env, headers, hdr_buf, (int)sizeof(hdr_buf));
+    }
+    rc = ys_reinvite_with_sdp((pjsua_call_id)call_id, sdp_buf,
+                              hdr_buf[0] ? hdr_buf : NULL);
     free(sdp_buf);
 
     return (jint)rc;

@@ -46,7 +46,7 @@ public abstract class ConnectionService extends android.telecom.ConnectionServic
          * eventId 查找会话构造事件（不消费槽） */
         long eventId = request.getExtras() != null
                 ? request.getExtras().getLong(
-                    "cz.acrobits.libsoftphone.eventId", -1) : -1;
+                    SdkBridge.EXTRA_EVENT_ID, -1) : -1;
         if (eventId > 0) {
             CallSession session = SdkBridge.get().findSession(eventId);
             if (session != null) {

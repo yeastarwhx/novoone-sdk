@@ -83,7 +83,7 @@ public final class JniBridge {
     public static native int nativeSetRegisterHeaders(String headers);
 
     /** 用新 offer SDP 发 re-INVITE（hold/resume）。@return 0 成功，-1 失败 */
-    public static native int nativeReinviteCall(int callId, String sdp);
+    public static native int nativeReinviteCall(int callId, String sdp, String headers);
 
     /**
      * 通知库"本机网络已切换"，启动信令恢复（shutdown 死连接 + 账号

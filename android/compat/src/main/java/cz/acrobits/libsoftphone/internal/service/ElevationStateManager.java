@@ -32,8 +32,4 @@ public final class ElevationStateManager {
         android.util.Log.d("Acrobits.Elevation", "allowBecause " + reason);
     }
 
-    /** 收回调用许可 */
-    public void revokeBecause(AllowlistReason reason) {
-        android.util.Log.d("Acrobits.Elevation", "revokeBecause " + reason);
-    }
 }

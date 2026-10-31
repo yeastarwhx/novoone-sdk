@@ -183,7 +183,9 @@ final class PushTokenReporter {
 
     /** token 包装：base64(FCM token 完整原文) */
     private static String wrapToken(String fcmToken) {
-        return android.util.Base64.encodeToString(fcmToken.getBytes(), android.util.Base64.NO_WRAP);
+        return android.util.Base64.encodeToString(
+                fcmToken.getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                android.util.Base64.NO_WRAP);
     }
 
     private static String userAgentId(Context ctx) {
@@ -205,7 +207,8 @@ final class PushTokenReporter {
         return Build.MANUFACTURER + " " + Build.MODEL;
     }
 
-    /** tenantCode：注册 host 剥端口后的裸域 */
+    /** tenantCode：注册 host 剥端口后的裸域（按首个 ':' 截断——SIP 域名/IPv4
+     *  场景适用；IPv6 字面量 host 不支持，出现时需另行适配） */
     private static String tenantOf(SdkBridge.AccountSnapshot snap) {
         String host = snap.host != null ? snap.host : "";
         int colon = host.indexOf(':');

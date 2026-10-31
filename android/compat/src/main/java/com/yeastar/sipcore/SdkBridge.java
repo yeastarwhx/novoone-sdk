@@ -85,7 +85,7 @@ public final class SdkBridge implements EngineCallback {
     /* Telecom 桥接 */
 
     /** 上报 extras 携带的 eventId 键（pending 槽配对键） */
-    private static final String EXTRA_EVENT_ID = "cz.acrobits.libsoftphone.eventId";
+    public static final String EXTRA_EVENT_ID = "cz.acrobits.libsoftphone.eventId";
 
     /** 运行期连续异常熔断阈值（同一进程连续 3 次即 disable） */
     private static final int TELECOM_FAILURE_TRIP = 3;
@@ -568,16 +568,19 @@ public final class SdkBridge implements EngineCallback {
         if (observer == null) {
             return;
         }
-        String head = reason != null && reason.indexOf('|') > 0
-                ? reason.substring(0, reason.indexOf('|')) : "";
-        NetworkType type;
-        if ("wifi".equals(head)) {
-            type = NetworkType.WIFI;
-        } else if ("cell".equals(head)) {
-            type = NetworkType.MOBILE;
-        } else {
-            type = NetworkType.UNKNOWN;
+        /* NetworkMonitor reason 三形态："type-switch:<old>-><new>" /
+         * "lost-recovered" / "ip-changed"——类型取切换后的新网络；
+         * 后两支无类型信息（保守 UNKNOWN，App 侧仅日志消费） */
+        String after = null;
+        if (reason != null && reason.startsWith("type-switch:")) {
+            int arrow = reason.indexOf("->");
+            if (arrow > 0) {
+                after = reason.substring(arrow + 2);
+            }
         }
+        NetworkType type = "wifi".equals(after) ? NetworkType.WIFI
+                : "cell".equals(after) ? NetworkType.MOBILE
+                : NetworkType.UNKNOWN;
         try {
             observer.dispatchNetworkChangeDetected(type);
         } catch (Throwable t) {
@@ -936,8 +939,15 @@ public final class SdkBridge implements EngineCallback {
     private final Map<String, String> mRegisterHeaders =
             new java.util.LinkedHashMap<String, String>();
 
-    /** includeNonStandardSipHeader：REGISTER 头即时下发引擎（粘性直到排除）；
-     *  INVITE 头记录（引擎呼出仅支持一次性头注入，requestId 走 callMake 参数） */
+    /* re-INVITE 附加头（App 经 includeNonStandardSipHeader 注入；引擎
+     * re-INVITE 组包时会话级 X-Request-ID 之外一并携带） */
+    private final Map<String, String> mInviteHeaders =
+            new java.util.LinkedHashMap<String, String>();
+
+    /** includeNonStandardSipHeader：REGISTER/INVITE 头即时下发引擎（粘性
+     *  直到对应 exclude）。REGISTER 头随每次注册携带；INVITE 头随
+     *  in-dialog re-INVITE（hold/resume/换网）携带——呼出新通话的头走
+     *  callMake 的 requestId 专用通道（一次性）。线程约定：主线程调用。 */
     public void includeNonStandardSipHeader(int accountIndex, String method,
                                             String what, String name, String value) {
         if (name == null || name.isEmpty()) {
@@ -947,9 +957,12 @@ public final class SdkBridge implements EngineCallback {
         if ("REGISTER".equalsIgnoreCase(method)) {
             mRegisterHeaders.put(key, value != null ? value : "");
             applyRegisterHeaders();
-        } else {
-            android.util.Log.d(TAG, "custom " + method + " header recorded: "
-                    + key + "=" + value + " (engine: INVITE headers via call path)");
+        } else if ("INVITE".equalsIgnoreCase(method)) {
+            /* re-INVITE 附加头（粘性直到排除）：随 hold/resume/换网的
+             * re-INVITE 携带——对齐旧栈（换网场景 App 注入
+             * X-NetworkChanged，re-INVITE 自动带上） */
+            mInviteHeaders.put(key, value != null ? value : "");
+            applyInviteHeaders();
         }
     }
 
@@ -961,7 +974,22 @@ public final class SdkBridge implements EngineCallback {
         if ("REGISTER".equalsIgnoreCase(method)) {
             mRegisterHeaders.remove(name.trim());
             applyRegisterHeaders();
+        } else if ("INVITE".equalsIgnoreCase(method)) {
+            mInviteHeaders.remove(name.trim());
+            applyInviteHeaders();
         }
+    }
+
+    /** INVITE 附加头 → 引擎 re-INVITE 通道（"Name: Value\n" 多行串） */
+    private void applyInviteHeaders() {
+        StringBuilder sb = new StringBuilder();
+        for (Map.Entry<String, String> e : mInviteHeaders.entrySet()) {
+            if (sb.length() > 0) {
+                sb.append('\n');
+            }
+            sb.append(e.getKey()).append(": ").append(e.getValue());
+        }
+        mEngine.setReinviteExtraHeaders(sb.length() > 0 ? sb.toString() : null);
     }
 
     private void applyRegisterHeaders() {
@@ -1283,6 +1311,7 @@ public final class SdkBridge implements EngineCallback {
             mPendingIncomingCall.set(event);
             tm.addNewIncomingCall(handle, extras);
             mReportedCallIds.add(eventId);
+            mTelecomFailureStreak.set(0);
             android.util.Log.i(TAG, "outgoing call reported to Telecom via incoming (eventId="
                     + eventId + ")");
         } catch (Throwable t) {

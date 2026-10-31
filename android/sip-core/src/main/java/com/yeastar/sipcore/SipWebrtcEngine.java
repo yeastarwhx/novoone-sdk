@@ -169,6 +169,17 @@ public class SipWebrtcEngine {
 
     private EngineCallback callback;
 
+    /* re-INVITE 附加头（compat 桥接：App 经 includeNonStandardSipHeader(INVITE)
+     * 注入，如换网场景的 X-NetworkChanged；粘性直到排除。re-INVITE 组包时
+     * 与会话级 X-Request-ID 一并携带——对齐旧栈行为：所有 in-dialog
+     * re-INVITE 沿用本通对话 requestId，换网时附加换网标志头） */
+    private volatile String reinviteExtraHeaders;
+
+    /** re-INVITE 附加头设置（"Name: Value\n" 多行；null/空 = 清除） */
+    public void setReinviteExtraHeaders(final String headers) {
+        reinviteExtraHeaders = headers != null && !headers.isEmpty() ? headers : null;
+    }
+
     /* ICE STUN 服务器配置（保留接口，当前不用于候选收集——
      * 候选极简化策略下仅收集 host 候选） */
     private volatile java.util.List<PeerConnection.IceServer> stunServers =
@@ -396,11 +407,6 @@ public class SipWebrtcEngine {
      *
      * @return accId (>=0)，失败 -1；注册结果经 onRegisterState 回调上抛
      */
-    public int accountRegister(final String server, final String user,
-                               final String pass, final String proxy) {
-        return accountRegister(server, user, pass, proxy, null, null, 0);
-    }
-
     /**
      * 注册账号（完整参数）。authUser 独立认证用户名（null = 同 user）、
      * displayName From 显示名（null = 无）、expires 注册时效秒（<=0 库默认）。
@@ -1826,7 +1832,8 @@ public class SipWebrtcEngine {
         cancelGatherWatchdog(s);
 
         String filteredReinvite = filterIpv6Candidates(desc.description);
-        if (JniBridge.nativeReinviteCall(s.callId, filteredReinvite) == 0) {
+        if (JniBridge.nativeReinviteCall(s.callId, filteredReinvite,
+                buildReinviteHeaders(s)) == 0) {
             s.awaitingAnswer = true;
             log("[ys] re-INVITE sent (call " + s.callId + ", offer "
                     + filteredReinvite.length() + " bytes)");
@@ -2238,6 +2245,42 @@ public class SipWebrtcEngine {
             log("[engine] WARNING: called off main thread - posted");
             main.post(r);
         }
+    }
+
+    /**
+     * re-INVITE 附加头组装：会话级 X-Request-ID（沿用本通对话，对齐旧栈
+     * ——hold/resume 与换网 re-INVITE 均携带）+ compat 桥接的 extra 头
+     * （换网 X-NetworkChanged 等）。
+     */
+    private String buildReinviteHeaders(CallSession s) {
+        String extra = reinviteExtraHeaders;
+        StringBuilder sb = new StringBuilder();
+        /* App 已经头通道注入 X-REQUEST-ID 时不再自动拼会话级（防双头——
+         * SIP 头名大小写不敏感但报文出现两个同名头不合法度）；呼入通话
+         * App 未注入时自动沿用本通对话 requestId */
+        boolean extraHasRequestId = extra != null
+                && containsHeaderIgnoreCase(extra, "X-REQUEST-ID");
+        if (!extraHasRequestId && s.requestId != null && !s.requestId.isEmpty()) {
+            sb.append("X-REQUEST-ID: ").append(s.requestId).append('\n');
+        }
+        if (extra != null) {
+            sb.append(extra);
+            if (extra.charAt(extra.length() - 1) != '\n') {
+                sb.append('\n');
+            }
+        }
+        return sb.length() > 0 ? sb.toString() : null;
+    }
+
+    /** 头串中是否已含指定头名（按行取 ':' 前段，大小写不敏感） */
+    private static boolean containsHeaderIgnoreCase(String headers, String name) {
+        for (String line : headers.split("\n")) {
+            int colon = line.indexOf(':');
+            if (colon > 0 && name.equalsIgnoreCase(line.substring(0, colon).trim())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** 过滤 IPv6 候选行（服务器不支持 IPv6，仅保留 IPv4 候选）。
