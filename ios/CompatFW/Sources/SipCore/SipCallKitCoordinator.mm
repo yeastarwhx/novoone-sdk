@@ -83,6 +83,9 @@ static NSString *CallKitReasonName(SipCallKitEndedReason reason)
 /* 去电：CXStartCallAction fulfill 后执行的呼出块（uuid 键） */
 @property (nonatomic, strong) NSMutableDictionary<NSUUID *, void (^)(NSUUID *)> *pendingStartBlocks;
 @property (nonatomic, strong) NSMutableDictionary<NSUUID *, NSTimer *> *startWatchdogs;
+/* 看门狗已兜底直呼的 uuid：迟到的 start action 到达时据此跳过二次呼出
+ * （block 已弹出，else 分支会误判为系统记录回拨）；sessionEnded 清理 */
+@property (nonatomic, strong) NSMutableSet<NSUUID *> *fallbackDialedUuids;
 /* 已 fulfill 的 CXEndCallAction 的 uuid（用户经系统卡片拒接/挂断——系统侧
  * 已收口，sessionEnded 不再 reportCallEnded 重复上报） */
 @property (nonatomic, strong) NSMutableSet<NSUUID *> *endActionUuids;
@@ -107,6 +110,7 @@ static NSString *CallKitReasonName(SipCallKitEndedReason reason)
         _pendingStartBlocks = [[NSMutableDictionary alloc] init];
         _startWatchdogs = [[NSMutableDictionary alloc] init];
         _endActionUuids = [[NSMutableSet alloc] init];
+        _fallbackDialedUuids = [[NSMutableSet alloc] init];
 
         _callsInRecentsEnabled = YES;
         _providerCallsInRecents = YES;
@@ -363,6 +367,11 @@ static NSString *CallKitReasonName(SipCallKitEndedReason reason)
     NSUUID *uuid = session.callKitUuid;
     if (uuid == nil) { return; }
     [self scheduleProviderRebuildAfterLinger];
+    /* fallbackDialedUuids 此处不清：迟到 start action 可能晚于会话终态
+     * （8s 看门狗兜底直呼 → 快速 4xx → sessionEnded，系统才回调 start
+     * action），终态即清会把双呼保护撤在迟到动作到达之前；集合仅
+     * coordinator 异常的兜底路径触达（每 uuid 一项），命中迟到动作时
+     * 消费、生命周期内不清理无碍 */
     [self failPendingAnswerForUuid:uuid];
     [self cancelStartWatchdogForUuid:uuid];
     /* 用户经系统卡片拒接/挂断（CXEndCallAction 已 fulfill）：系统侧已收口，
@@ -445,6 +454,9 @@ static NSString *CallKitReasonName(SipCallKitEndedReason reason)
     [self cancelStartWatchdogForUuid:uuid];
     if (makeCall == nil) { return; }   /* 已执行/已收掉 */
     [self.pendingStartBlocks removeObjectForKey:uuid];
+    /* 标记已兜底直呼：迟到的 start action 据此跳过（else 分支无此标记
+     * 会误判系统记录回拨再呼一次——同号双呼、两会话共用 uuid） */
+    [self.fallbackDialedUuids addObject:uuid];
     ckLog(@"startCall fallback -> direct dial (uuid=%@)", uuid.UUIDString);
     makeCall(uuid);
 }
@@ -483,7 +495,19 @@ static NSString *CallKitReasonName(SipCallKitEndedReason reason)
         /* 引擎按会话状态分流：振铃中 → 486 拒接；通话中 → BYE/CANCEL */
         [self.engine callEndFromCallKit:callId uuid:action.callUUID];
     } else {
-        /* 会话未绑定（report 后 INVITE 未到即拒接/挂断）：fulfill 实测
+        /* 窗口期呼出（gather 未完成 callId=-1，会话存在）：引擎本地终结
+         * （INVITE 已提交的竞态窗口照常 BYE/CANCEL）；与上方 callId>=0
+         * 分支同不变量——先登记再终结（endUnboundOutgoing 内部 runOnMain
+         * 主线程同步 → onSessionTerminated → sessionEnded 即时回查，晚
+         * 登记则防重复 reportCallEnded 失效）；未终结（无会话/已终态）
+         * 则撤销登记，否则残留无人消费 */
+        if (self.engine != nil) {
+            [self.endActionUuids addObject:action.callUUID];
+            if (![self.engine endUnboundOutgoingForUuid:action.callUUID]) {
+                [self.endActionUuids removeObject:action.callUUID];
+            }
+        }
+        /* 会话未绑定的来电（report 后 INVITE 未到即拒接/挂断）：fulfill 实测
          * 不足以撤卡（系统 call 滞留响铃），补 reportCallEnded 强制收口
          * （无登记时 no-op）；endActionUuids 不登记（无会话即无
          * sessionEnded 消费，登记即泄漏） */
@@ -516,6 +540,12 @@ static NSString *CallKitReasonName(SipCallKitEndedReason reason)
         ckLog(@"start action fulfilled -> engine dial (number=%@, uuid=%@)",
               number, action.callUUID.UUIDString);
         makeCall(action.callUUID);
+    } else if ([self.fallbackDialedUuids containsObject:action.callUUID]) {
+        /* 看门狗已兜底直呼（系统回调晚于 8s）：跳过二次呼出，只收动作 */
+        [self.fallbackDialedUuids removeObject:action.callUUID];
+        ckLog(@"late start action after fallback dial — skip duplicate (uuid=%@)",
+              action.callUUID.UUIDString);
+        return;
     } else {
         /* 系统通话记录回拨（App 未发起，无 requestId）：引擎直呼 + 事件通知
          * RN 拉起去电 UI（AC-6） */

@@ -71,15 +71,16 @@ class AppProject:
 # ---------------- git 基线 ----------------
 
 def pbxproj_clean(app: AppProject) -> bool:
-    """pbxproj 与 HEAD 是否一致(自研形态切换的安全基线)"""
+    """pbxproj 与 HEAD 是否一致(自研形态切换的安全基线;显式比 HEAD——
+    裸 diff --quiet 只比工作区 vs 索引,staged 改动会穿门)"""
     return subprocess.run(
-        ["git", "-C", app.git_cwd, "diff", "--quiet", "--", GIT_PATHSPEC],
+        ["git", "-C", app.git_cwd, "diff", "--quiet", "HEAD", "--", GIT_PATHSPEC],
     ).returncode == 0
 
 
 def diff_stat(app: AppProject) -> str:
     return subprocess.run(
-        ["git", "-C", app.git_cwd, "diff", "--stat", "--", GIT_PATHSPEC],
+        ["git", "-C", app.git_cwd, "diff", "--stat", "HEAD", "--", GIT_PATHSPEC],
         capture_output=True, text=True,
     ).stdout.strip()
 

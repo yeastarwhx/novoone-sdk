@@ -499,8 +499,15 @@ final class CompatAdapter: NSObject, SipEngineCallback {
         }
         let requestId = call.transients?.findString("requestId")
         NSLog("[compat] post -> startOutgoingCall uri=%@ requestId=%@", number, requestId ?? "nil")
-        engine.startOutgoingCall(number, requestId: requestId)
-        pendingOutgoing.append(call)
+        // 入队与引擎调用收敛主线程(线程模型:簿记状态仅主线程读写;RN 桥
+        // 线程直呼会与引擎主线程回调并发读写 pendingOutgoing),且先入队
+        // 再呼出——coordinator 未就绪的直呼兜底在主线程同步执行,callMake
+        // 即时失败回调 onCallStartFailed 时本次条目必须已在队列中,否则
+        // 撤回扑空、失败呼出永占队首
+        compatMain {
+            self.pendingOutgoing.append(call)
+            self.engine.startOutgoingCall(number, requestId: requestId)
+        }
         return .Success
     }
 
@@ -867,7 +874,9 @@ final class CompatAdapter: NSObject, SipEngineCallback {
         let stats = sessionId(of: event).flatMap { statsCache[$0] }
         let jitterMs = (stats?["jitterMs"] as? Double) ?? 0
         let lossPct = (stats?["packetLossPct"] as? Double) ?? 0
-        let rttMs = (stats?["roundTripMs"] as? Double) ?? 0
+        // 无缓存(刚接通统计未就绪/上报失败)= 未知:-1 对齐 Acrobits 契约,
+        // 0 会在首屏给出"完美网络"的虚假读数
+        let rttMs = (stats?["roundTripMs"] as? Double) ?? -1
         let st = CallStatistics()
         st.clockRateInHertz = 48000
         // App 侧 jitterMs = maxJitter*1000/clockRate,48 系数还原毫秒值
@@ -981,6 +990,33 @@ final class CompatAdapter: NSObject, SipEngineCallback {
     }
 
     // MARK: - SipEngineCallback(引擎主线程)
+
+    /// 呼出被引擎拒绝(WebRTC 未就绪/会话满载/start 未完成)——无会话建立、
+    /// 无后续会话事件。撤回 postOutgoing 排队的事件并通知 App 呼叫失败:
+    /// 不撤回则呼出 UI 永停"呼叫中",且滞留条目会被下一次成功呼出的
+    /// bindOrSpawnEvent FIFO 错绑(新通话绑旧事件,App 侧从此收不到回调)
+    func onCallStartFailed(_ number: String?, requestId: String?, reason: String?) {
+        // 匹配本次失败的排队条目:requestId 优先(App 呼出链同源透传),
+        // 缺省按 number(App 呼出可不带 requestId);盲弹队首会把等待中的
+        // 其他呼出错杀——系统记录回拨/直呼失败(requestId=nil 且 number
+        // 不匹配任何排队)时队列不动,正是要消除的 FIFO 错绑换入口复现
+        let idx = pendingOutgoing.firstIndex { entry in
+            if let rid = requestId {
+                return entry.transients?.findString("requestId") == rid
+            }
+            return entry.uri == number
+        }
+        guard let i = idx else {
+            // 无匹配排队条目(回拨/直呼路径无排队事件),无可撤回
+            NSLog("[compat] call start failed (%@): no matching pending outgoing", reason ?? "?")
+            return
+        }
+        let call = pendingOutgoing.remove(at: i)
+        NSLog("[compat] call start failed (%@, number=%@) -> drop pending outgoing", reason ?? "?", number ?? "-")
+        dispatch { $0.onNewEvent?(call) }
+        dispatch { $0.onCallStateChanged?(state: .Error, call: call) }
+        dispatch { $0.onCallRepositoryChanged?() }
+    }
 
     func onCallSessionChanged(_ session: [AnyHashable: Any]?) {
         guard let session = session as? [String: Any],

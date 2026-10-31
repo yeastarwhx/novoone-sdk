@@ -45,6 +45,16 @@
  */
 - (void)onCallKitEvent:(NSDictionary *)event;
 
+@optional
+/**
+ * 呼出请求被引擎拒绝（WebRTC 未就绪/会话满载/start 未完成）——无会话
+ * 建立、无后续会话事件。上层据此撤回已排队的呼出事件并通知 App 呼叫
+ * 失败（否则呼出 UI 永停"呼叫中"）。reason 供日志。
+ */
+- (void)onCallStartFailed:(NSString *)number
+                requestId:(nullable NSString *)requestId
+                   reason:(NSString *)reason;
+
 @end
 
 #endif /* SIP_ENGINE_CALLBACK_H_ */

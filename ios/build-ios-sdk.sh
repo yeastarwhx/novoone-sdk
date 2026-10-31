@@ -53,11 +53,22 @@ python3 "$FW_DIR/tools/gen_pbxproj.py"
 echo "==> [4/5] framework 真机 Release 编译"
 BUILD="$FW_DIR/build"
 rm -rf "$BUILD"
-xcodebuild -project "$FW_DIR/CompatFW.xcodeproj" -scheme Softphone_Swift \
+# 输出落文件再过滤:xcodebuild|grep|head 直连管道在 pipefail 下,过滤命中
+# 超 head 上限时 head 先退、SIGPIPE 反杀 xcodebuild——本可成功的构建被误判
+XCB_LOG="$BUILD/xcodebuild.log"
+mkdir -p "$BUILD"
+if ! xcodebuild -project "$FW_DIR/CompatFW.xcodeproj" -scheme Softphone_Swift \
   -sdk iphoneos -configuration Release \
   -derivedDataPath "$BUILD" \
   BUILD_LIBRARY_FOR_DISTRIBUTION=YES CODE_SIGNING_ALLOWED=NO \
-  build 2>&1 | grep -E 'error|warning: .*Softphone|BUILD (SUCCEEDED|FAILED)' | head -20
+  build > "$XCB_LOG" 2>&1; then
+  # || true:grep 零匹配(信号杀死等无字面 error 的失败)退出 1 会先于
+  # 下行 echo 触发 set -e,恰丢掉完整日志指引
+  grep -E 'error' "$XCB_LOG" | head -20 || true
+  echo "ERROR: CompatFW build failed (full log: $XCB_LOG)"
+  exit 1
+fi
+grep -E 'warning: .*Softphone|BUILD (SUCCEEDED|FAILED)' "$XCB_LOG" | head -20 || true
 FW="$(find "$BUILD/Build/Products" -name 'Softphone_Swift.framework' -path '*Release-iphoneos*' | head -1)"
 [[ -d "$FW" ]] || { echo "ERROR: framework not produced"; exit 1; }
 
@@ -69,7 +80,12 @@ rm -rf "$BINARIES/WebRTC.xcframework"
 cp -Rc "$VENDOR/WebRTC.xcframework" "$BINARIES/"   # APFS clone,同卷瞬时
 
 echo "==> 符号抽查"
-SYMS=$(nm -g "$BINARIES/Softphone_Swift.xcframework/ios-arm64/Softphone_Swift.framework/Softphone_Swift" 2>/dev/null | grep -c ' [Tt] _pjsua_\| [Tt] _pj_')
+# grep -c 零匹配退出码 1 会触发 set -e:恰恰是抽查要抓的异常(合并库过期/
+# 符号剥离)会让产物已就位的构建报失败——吞退出码,显式判 0 报错
+SYMS=$(nm -g "$BINARIES/Softphone_Swift.xcframework/ios-arm64/Softphone_Swift.framework/Softphone_Swift" 2>/dev/null | grep -c ' [Tt] _pjsua_\| [Tt] _pj_' || true)
+if [[ "$SYMS" -eq 0 ]]; then
+  echo "ERROR: framework 无 pj* 符号(合并库过期或符号被剥离?)"; exit 1
+fi
 echo "    framework pj* 符号: $SYMS"
 echo "==> DONE: $BINARIES"
 if [[ "$SWITCH_NATIVE" == 1 ]]; then

@@ -100,6 +100,13 @@ final class CompatPushReporter {
             case .Other:
                 guard token != tokenMsgs else { return }
                 tokenMsgs = token
+            case .All:
+                // .All = 同 token 覆盖两用途(Acrobits 合法用法,handlePush
+                // 亦接受 .All):落 default 丢弃会让 token 永不上报——
+                // VoIP 推送零到达且无日志线索
+                guard token != tokenCalls || token != tokenMsgs else { return }
+                tokenCalls = token
+                tokenMsgs = token
             default:
                 return
             }

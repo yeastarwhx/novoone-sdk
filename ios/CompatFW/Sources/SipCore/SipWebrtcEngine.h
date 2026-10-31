@@ -277,6 +277,12 @@ typedef NS_ENUM(NSInteger, SipCallPjsuaState) {
 /* CallKit 终结动作分流：来电振铃中 → 486 拒接；通话中/呼出 → BYE/CANCEL */
 - (void)callEndFromCallKit:(NSInteger)callId uuid:(nullable NSUUID *)uuid;
 
+/* 窗口期呼出的 CallKit 挂断（gather 未完成 callId 未回填，callIdForCallKitUuid
+ * 返回 -1 但会话存在）：等效 callHangupByGroupId 本地终结，INVITE 已提交的
+ * 竞态窗口照常 BYE/CANCEL。返回是否终结了会话——coordinator 据此登记
+ * endActionUuids 防 sessionEnded 重复 reportCallEnded（主线程同步执行） */
+- (BOOL)endUnboundOutgoingForUuid:(NSUUID *)uuid;
+
 /* CallKit 事件上抛（onCallKitEvent → RN NativeCall:CallKitAction） */
 - (void)notifyCallKitEvent:(NSDictionary *)event;
 

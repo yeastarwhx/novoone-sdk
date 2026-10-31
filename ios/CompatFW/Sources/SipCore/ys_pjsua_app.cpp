@@ -407,6 +407,18 @@ void ys_set_user_agent(const char *ua)
 /* 账号                                                                */
 /* ------------------------------------------------------------------ */
 
+/* 组装串截断即拒：静默截断的凭据/地址会让注册带着残缺数据无限 401/
+ * 请求失败且日志无线索——显式报错拒注册，现场可排查 */
+#define YS_SNPF_CHK(buf, n) \
+	do { \
+		if ((n) < 0 || (n) >= (int)sizeof(buf)) { \
+			PJ_LOG(1, (THIS_FILE, "ys_register_account: %s truncated " \
+			           "(need %d, have %d)", #buf, (n), \
+			           (int)sizeof(buf))); \
+			return -1; \
+		} \
+	} while (0)
+
 pjsua_acc_id ys_register_account(const ys_acc_registerinfo *reginfo)
 {
 	if (!reginfo || !reginfo->reg_uri[0] || !reginfo->username[0]) {
@@ -420,13 +432,17 @@ pjsua_acc_id ys_register_account(const ys_acc_registerinfo *reginfo)
 	 * dstport 仅兼容保留）。填入稳定存储：pjsua 持有指针直到下次注册。
 	 * 账号 id 的 user 部分恒为分机号（username）；认证用户名独立
 	 * （auth_username，缺省同 username）；显示名拼进 id 的引号段 */
-	if (reginfo->registername[0])
-		snprintf(g_acc_id_buf, sizeof(g_acc_id_buf), "\"%s\" <sip:%s@%s>",
-		         reginfo->registername, reginfo->username, reginfo->reg_uri);
-	else
-		snprintf(g_acc_id_buf, sizeof(g_acc_id_buf), "sip:%s@%s",
-		         reginfo->username, reginfo->reg_uri);
-	snprintf(g_acc_reg_buf, sizeof(g_acc_reg_buf), "sip:%s", reginfo->reg_uri);
+	int n;
+	if (reginfo->registername[0]) {
+		n = snprintf(g_acc_id_buf, sizeof(g_acc_id_buf), "\"%s\" <sip:%s@%s>",
+		             reginfo->registername, reginfo->username, reginfo->reg_uri);
+	} else {
+		n = snprintf(g_acc_id_buf, sizeof(g_acc_id_buf), "sip:%s@%s",
+		             reginfo->username, reginfo->reg_uri);
+	}
+	YS_SNPF_CHK(g_acc_id_buf, n);
+	n = snprintf(g_acc_reg_buf, sizeof(g_acc_reg_buf), "sip:%s", reginfo->reg_uri);
+	YS_SNPF_CHK(g_acc_reg_buf, n);
 	/* Route 的 ;transport= 参数：0=udp 1=tcp 2=tls */
 	const char *tsport = g_sip_transport == 2 ? "tls" :
 	                     (g_sip_transport ? "tcp" : "udp");
@@ -434,17 +450,20 @@ pjsua_acc_id ys_register_account(const ys_acc_registerinfo *reginfo)
 		/* Outbound Proxy 架构：registrar 显示 Server Host 域（仅标识），
 		 * 实际所有请求经 proxy 转发（pjsua 自动生成 Route 头，
 		 * 参考包 Route: <sip:proxy;transport=tcp;lr>） */
-		snprintf(g_acc_proxy_buf, sizeof(g_acc_proxy_buf), "sip:%s;transport=%s;lr",
-		         reginfo->proxy_uri, tsport);
+		n = snprintf(g_acc_proxy_buf, sizeof(g_acc_proxy_buf),
+		             "sip:%s;transport=%s;lr", reginfo->proxy_uri, tsport);
 	} else {
 		/* 直连架构：无独立代理，请求直达 registrar */
-		snprintf(g_acc_proxy_buf, sizeof(g_acc_proxy_buf), "sip:%s;transport=%s",
-		         reginfo->reg_uri, tsport);
+		n = snprintf(g_acc_proxy_buf, sizeof(g_acc_proxy_buf),
+		             "sip:%s;transport=%s", reginfo->reg_uri, tsport);
 	}
-	snprintf(g_acc_user_buf, sizeof(g_acc_user_buf), "%s",
-	         reginfo->auth_username[0] ? reginfo->auth_username
-	                                   : reginfo->username);
-	snprintf(g_acc_pass_buf, sizeof(g_acc_pass_buf), "%s", reginfo->passwd);
+	YS_SNPF_CHK(g_acc_proxy_buf, n);
+	n = snprintf(g_acc_user_buf, sizeof(g_acc_user_buf), "%s",
+	             reginfo->auth_username[0] ? reginfo->auth_username
+	                                       : reginfo->username);
+	YS_SNPF_CHK(g_acc_user_buf, n);
+	n = snprintf(g_acc_pass_buf, sizeof(g_acc_pass_buf), "%s", reginfo->passwd);
+	YS_SNPF_CHK(g_acc_pass_buf, n);
 
 	pjsua_acc_config acc;
 	pjsua_acc_config_default(&acc);

@@ -1420,10 +1420,14 @@ static void ys_fill_field(char *dst, size_t size, NSString *value)
     [self runOnMain:^{
         if (!self->_started) {
             [self engineLog:@"start first"];
+            [self notifyCallStartFailed:number requestId:requestId
+                                 reason:@"engine not started"];
             return;
         }
         if (!self.isWebRtcReady) {
             [self engineLog:@"WebRTC unavailable - cannot dial"];
+            [self notifyCallStartFailed:number requestId:requestId
+                                 reason:@"WebRTC unavailable"];
             return;
         }
         /* 新通话初始听筒：会话创建前重置（registry 中非终态会话均为
@@ -1434,6 +1438,8 @@ static void ys_fill_field(char *dst, size_t size, NSString *value)
         if (session == nil) {
             [self engineLog:@"call rejected: MAX_CONCURRENT (%ld)",
                 (long)SipCallSessionRegistry.maxSessions];
+            [self notifyCallStartFailed:number requestId:requestId
+                                 reason:@"MAX_CONCURRENT"];
             return;
         }
         session.remoteNumber = number;
@@ -1594,6 +1600,27 @@ static void ys_fill_field(char *dst, size_t size, NSString *value)
  * 与 callHangup 一致：callId>=0 竞态窗口补 BYE/CANCEL，本地 view=Terminated
  * → onSessionTerminated（closePeerConnection 连带撤看门狗/停回铃）→
  * 终态滞回后清除推空 callList，RN 面板 >0→0 收口，再呼出可正常弹屏 */
+/* 呼出会话本地终结单点实现（groupId 挂断 / CallKit 窗口期挂断共用）：
+ * INVITE 已提交的竞态窗口（callId>=0）照常 BYE/CANCEL，否则纯本地终结
+ * → view=Terminated → onSessionTerminated（closePeerConnection 连带撤
+ * 看门狗/停回铃）→ 终态滞回后清除推空 callList。调用方负责已查得
+ * 会话（按 groupId 或 uuid）且非终态 */
+- (void)terminateOutgoingSession:(SipCallSession *)session context:(NSString *)context
+{
+    if (session.callId >= 0) {
+        /* 竞态窗口：看门狗刚提交 INVITE（callId 已回填）——照常 BYE/CANCEL */
+        if (ys_hangup_call((pjsua_call_id)session.callId) != 0) {
+            [self ysLog:@"%@: hangup call %ld failed",
+                context, (long)session.callId];
+        }
+    } else {
+        [self engineLog:@"%@: pre-INVITE -> local terminate", context];
+    }
+    session.callStateView = SipCallStateTerminated;
+    [self onSessionTerminated:session];
+    [self notifySessionChanged:session];
+}
+
 - (void)callHangupByGroupId:(NSString *)groupId
 {
     [self runOnMain:^{
@@ -1608,19 +1635,8 @@ static void ys_fill_field(char *dst, size_t size, NSString *value)
         if (session.isTerminal) {
             return;
         }
-        if (session.callId >= 0) {
-            /* 竞态窗口：看门狗刚提交 INVITE（callId 已赋）——照常 BYE/CANCEL */
-            if (ys_hangup_call((pjsua_call_id)session.callId) != 0) {
-                [self ysLog:@"hangup (group %@) call %ld failed",
-                    groupId, (long)session.callId];
-            }
-        } else {
-            [self engineLog:@"hangup pre-INVITE (group %@) -> local terminate",
-                groupId];
-        }
-        session.callStateView = SipCallStateTerminated;
-        [self onSessionTerminated:session];
-        [self notifySessionChanged:session];
+        [self terminateOutgoingSession:session
+            context:[NSString stringWithFormat:@"hangup (group %@)", groupId]];
     }];
 }
 
@@ -1898,6 +1914,20 @@ static void ys_fill_field(char *dst, size_t size, NSString *value)
     }];
 }
 
+/* 呼出被拒（无会话无后续事件）→ 通知门面撤回排队中的呼出事件
+ * （@optional，未实现则只记日志） */
+- (void)notifyCallStartFailed:(NSString *)number
+                    requestId:(NSString *)requestId
+                       reason:(NSString *)reason
+{
+    if (self->_callback != nil
+        && [self->_callback respondsToSelector:
+               @selector(onCallStartFailed:requestId:reason:)]) {
+        [self->_callback onCallStartFailed:number requestId:requestId
+                                    reason:reason];
+    }
+}
+
 - (NSInteger)callIdForCallKitUuid:(NSUUID *)uuid
 {
     /* 引擎主线程（coordinator 动作回调在主队列） */
@@ -1907,6 +1937,24 @@ static void ys_fill_field(char *dst, size_t size, NSString *value)
         }
     }
     return -1;
+}
+
+- (BOOL)endUnboundOutgoingForUuid:(NSUUID *)uuid
+{
+    /* 主线程同步（runOnMain 直执行），coordinator 先登记 endActionUuids
+     * 再调此处（sessionEnded 回查防重复上报依赖登记在前），返回是否
+     * 终结了会话——NO 时 coordinator 撤销登记 */
+    __block BOOL ended = NO;
+    [self runOnMain:^{
+        for (SipCallSession *session in [self.registry snapshot]) {
+            if (![session.callKitUuid isEqual:uuid]) { continue; }
+            if (session.isTerminal) { return; }
+            [self terminateOutgoingSession:session context:@"callkit end"];
+            ended = YES;
+            return;
+        }
+    }];
+    return ended;
 }
 
 - (void)callEndFromCallKit:(NSInteger)callId uuid:(NSUUID *)uuid

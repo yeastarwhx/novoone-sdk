@@ -25,6 +25,8 @@ static const NSUInteger kSipOsLogMaxChars = 1000;
 /* os_log 统一串行输出队列（顺序保证 + 防流控，见 writeLine 注释） */
 @property (nonatomic, strong) dispatch_queue_t dripQueue;
 @property (nonatomic, copy) NSString *logFilePath;
+/* 落盘行计数（fileQueue 串行访问）：周期触发滚动复查 */
+@property (nonatomic, assign) NSUInteger appendCount;
 @end
 
 @implementation SipCoreLogger
@@ -179,6 +181,11 @@ static const NSUInteger kSipOsLogMaxChars = 1000;
         [handle seekToEndOfFile];
         [handle writeData:[line dataUsingEncoding:NSUTF8StringEncoding]];
         [handle closeFile];
+        /* 常驻进程只启动时滚动不够（VoIP 进程数天不重启，SIP 报文全量
+         * 落盘可涨至几十 MB）：周期复查滚动。fileQueue 串行，计数安全 */
+        if (++self.appendCount % 512 == 0) {
+            [self.class rollFileIfNeededAtPath:self.logFilePath];
+        }
     } @catch (NSException *e) {
         /* 日志写失败不得影响通话链路 */
     }
@@ -189,19 +196,26 @@ static const NSUInteger kSipOsLogMaxChars = 1000;
     dispatch_async(self.fileQueue, ^{
         NSString *path = self.logFilePath;
         [self.class createFileIfNeedAtPath:path];
-        /* 滚动：超过上限即把当前文件转存 .old（放弃更早的备份） */
-        NSDictionary *attrs = [[NSFileManager defaultManager] attributesOfItemAtPath:path error:nil];
-        unsigned long long size = [attrs fileSize];
-        if (size > (unsigned long long)kSipLogMaxFileSize) {
-            NSString *backup = [self.class backupLogFilePath];
-            [[NSFileManager defaultManager] removeItemAtPath:backup error:nil];
-            [[NSFileManager defaultManager] moveItemAtPath:path toPath:backup error:nil];
-            [self.class createFileIfNeedAtPath:path];
-        }
+        [self.class rollFileIfNeededAtPath:path];
     });
 }
 
 #pragma mark - 路径 / 时间戳
+
+/* 滚动：超过上限即把当前文件转存 .old（放弃更早的备份）。启动时
+ * （prepareLogFile）与写入过程中（appendToFile 周期复查）共用 */
++ (void)rollFileIfNeededAtPath:(NSString *)path
+{
+    NSDictionary *attrs =
+        [[NSFileManager defaultManager] attributesOfItemAtPath:path error:nil];
+    unsigned long long size = [attrs fileSize];
+    if (size > (unsigned long long)kSipLogMaxFileSize) {
+        NSString *backup = [self backupLogFilePath];
+        [[NSFileManager defaultManager] removeItemAtPath:backup error:nil];
+        [[NSFileManager defaultManager] moveItemAtPath:path toPath:backup error:nil];
+        [self createFileIfNeedAtPath:path];
+    }
+}
 
 + (NSString *)logDirectoryPath
 {
