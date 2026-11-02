@@ -48,8 +48,18 @@ public class Preferences {
     /** 播放块时长（ms；引擎缓冲自适应，仅记录） */
     public final Preference<Integer> playbackBlockDurationInMilliseconds = new Preference<Integer>();
 
-    /** User-Agent 覆盖（引擎在 engineStart 时自行组装统一 UA；此处记录备用） */
-    public final Preference<String> userAgentOverride = new Preference<String>();
+    /** User-Agent 覆盖（App 在 Instance.init 后设置，整串
+     *  "Mobile/{versionName}-Android-{ANDROID_ID}"；转发引擎
+     *  setUserAgentOverride——buildUserAgent 优先采用，使 UA 版本段
+     *  与实际 versionName 一致（126.x/26.x 同分支双版本打包），
+     *  未注入时引擎走兜底常量） */
+    public final Preference<String> userAgentOverride = new Preference<String>() {
+        @Override
+        public void set(String value) {
+            super.set(value);
+            com.yeastar.sipcore.SipWebrtcEngine.setUserAgentOverride(value);
+        }
+    };
 
     /** 系统通话集成模式（off / bestEffort；Telecom 集成由宿主 Manifest 决定，仅记录） */
     public final Preference<String> callIntegrationMode = new Preference<String>();

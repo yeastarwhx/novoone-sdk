@@ -59,13 +59,36 @@ public class SipWebrtcEngine {
     public static final int CALL_STATE_CONFIRMED = 5;
     public static final int CALL_STATE_DISCONNECTED = 6;
 
-    /** 自研 SDK 版本号（独立定义的版本序列，与 RN 工程 version /
-     *  安卓 versionName 同值，非 app 版本 26.x 推导；服务器按 UA 版本
-     *  首位 >= 100 识别自研栈）。 */
+    /* 自研 SDK 兜底版本号。版本真源是 App 的 versionName（126.x 与 26.x
+     * 双形态同分支打包），经 compat 层 Preferences.userAgentOverride
+     * （"Mobile/{versionName}-Android-{ANDROID_ID}" 整串）在引擎启动前
+     * 注入（Application.onCreate 必经，早于一切 engineStart）。本常量仅
+     * 在注入缺失（App 异常路径）时兜底，不再是版本真源——升级版本不需
+     * 要改这里。服务器按「UA 版本首位 >= 100」识别自研 WebRTC 栈并对其
+     * 强制 DTLS；旧栈版本首位为年份两位数（26/27…99），永不 >= 100，
+     * 新旧判定无歧义。 */
     private static final String SDK_VERSION = "126.9.1";
+
+    /** App 注入的 UA 覆盖串（完整 "Mobile/{v}-Android-{id}" 格式）。
+     *  null = 未注入（buildUserAgent 走 SDK_VERSION 兜底）。仅引擎启动
+     *  前设置、buildUserAgent 只读，无并发写。 */
+    private static volatile String sUserAgentOverride = null;
+
+    /** 注入 UA 覆盖串（compat 层 Preferences.userAgentOverride 转发） */
+    public static void setUserAgentOverride(String ua) {
+        sUserAgentOverride = ua;
+    }
 
     /** 统一 User-Agent：REGISTER/INVITE 等所有出站消息携带同一 UA。 */
     private static String buildUserAgent(Context ctx) {
+        /* App 注入串优先（版本段=实际 versionName，设备段与推送上报
+         * userAgentId 同源）。宽松格式校验防呆：格式不符视为无效注入，
+         * 走兜底路径 */
+        String override = sUserAgentOverride;
+        if (override != null && override.startsWith("Mobile/")
+                && override.contains("-Android-")) {
+            return override;
+        }
         String androidId = android.provider.Settings.Secure.getString(
                 ctx.getContentResolver(),
                 android.provider.Settings.Secure.ANDROID_ID);
@@ -73,11 +96,7 @@ public class SipWebrtcEngine {
             androidId = "unknown";
         }
         /* 前缀 Mobile：旧栈核心标记（推送配对等既有链路依赖），不得改动
-         * 。
-         * 自研 SDK 识别约定：服务器按「UA 版本首位 >= 100」
-         * 识别自研 WebRTC 栈并对其强制 DTLS（呼入 INVITE 下发带 ICE/DTLS
-         * 的 offer）；旧栈版本首位为年份两位数（26/27…99），永不 >= 100，
-         * 新旧判定无歧义 */
+         * 。兜底路径（无注入）版本段为 SDK_VERSION */
         return "Mobile/" + SDK_VERSION + "-Android-" + androidId;
     }
 
