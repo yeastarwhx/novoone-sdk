@@ -136,6 +136,16 @@ typedef NS_ENUM(NSInteger, SipCallPjsuaState) {
  */
 + (void)setUserAgentDeviceId:(nullable NSString *)deviceId;
 
+/*
+ * 注入完整 User-Agent 串（"Mobile/{v}-iOS-{id}"）：compat 层
+ * applyUserAgentOverride 从 App 的 preferences.userAgentOverride 整串
+ * 转发（版本段=实际 MARKETING_VERSION——126.x/26.x 同分支双版本打包，
+ * 版本真源在 App）。优先级高于 setUserAgentDeviceId: + 版本常量组合；
+ * 须在 engineStart 前调用；传 nil/格式不符回退组合路径
+ * （版本段=编译期兜底常量 kSipUaVersion）。
+ */
++ (void)setUserAgentFull:(nullable NSString *)ua;
+
 /* ---------------- ICE ---------------- */
 
 /*

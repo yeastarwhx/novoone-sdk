@@ -377,17 +377,24 @@ final class CompatAdapter: NSObject, SipEngineCallback {
         }
     }
 
-    /// UA 设备段注入(App preferences.userAgentOverride = "Mobile/{v}-iOS-{uuid}"
-    /// → 取尾段传引擎):推送路由按「REGISTER UA 设备段 ↔ PushReporter 上报
-    /// userAgentId」关联,不同源 = VoIP push 零到达。必须 engineStart 前调
+    /// UA 注入(App preferences.userAgentOverride = "Mobile/{v}-iOS-{uuid}"):
+    /// 整串注入(版本段=实际 MARKETING_VERSION,126.x/26.x 同分支双版本
+    /// 打包的版本真源链)+ 设备段注入(整串校验失败时的降级路径)。
+    /// 推送路由按「REGISTER UA 设备段 ↔ PushReporter 上报 userAgentId」
+    /// 关联,不同源 = VoIP push 零到达。必须 engineStart 前调
     private func applyUserAgentOverride() {
-        guard let override = SoftphoneBridge.instance().settings()?.getPreferences()?.userAgentOverride,
-              let deviceId = override.components(separatedBy: "iOS-").last,
-              !deviceId.isEmpty else {
+        guard let override = SoftphoneBridge.instance().settings()?.getPreferences()?.userAgentOverride else {
             return
         }
-        SipWebrtcEngine.setUserAgentDeviceId(deviceId)
-        NSLog("[compat] UA device segment injected (len=%ld)", deviceId.count)
+        // 整串注入:格式校验防呆在引擎侧(前缀 Mobile/ + 含 -iOS-),
+        // 不符自动走兜底路径
+        SipWebrtcEngine.setUserAgentFull(override)
+        // 设备段注入(降级路径,整串生效时冗余无害;保留旧日志便于对照)
+        if let deviceId = override.components(separatedBy: "iOS-").last,
+           !deviceId.isEmpty {
+            SipWebrtcEngine.setUserAgentDeviceId(deviceId)
+            NSLog("[compat] UA device segment injected (len=%ld)", deviceId.count)
+        }
     }
 
     // MARK: - VoIP push(CallKit report 红线 + 唤醒注册)

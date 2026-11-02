@@ -40,27 +40,34 @@
 /* 本地 SIP 端口（仅 UDP 绑定语义；TCP 走随机端口，见 ys_init_pjsua） */
 static int const kSipLocalPort = 5060;
 
-/* User-Agent：Mobile/126.9.1-iOS-{设备标识}，对齐旧栈格式、保留 Mobile
+/* User-Agent：Mobile/{版本}-iOS-{设备标识}，对齐旧栈格式、保留 Mobile
  * 前缀（推送配对等多个既有链路的核心标记，不得改动——改 MobileRTC 曾
  * 致推送配对失效，已实证撤销）。
- * 自研 SDK 识别约定：SDK 版本 126.9.1 为独立定义的版本
- * 序列（与 RN 工程 version / 安卓 versionName 同值，非 app 版本 26.x
- * 推导），服务器按「UA 版本首位 >= 100」识别自研 WebRTC 栈并对其强制
- * DTLS（呼入 INVITE 下发带 ICE/DTLS 的 offer）；旧栈版本首位为年份
- * 两位数（26/27…99），永不 >= 100，新旧判定无歧义。
- * 设备标识：优先取 setUserAgentDeviceId: 注入值（App 侧传
- * DeviceInfoBridgeSwift.getDeviceId()，与 PushReporter 上报的 userAgentId
- * 同源——服务器按「REGISTER UA 设备段 ↔ 上报 userAgentId」关联推送下发
- * 目标；安卓两端同为 ANDROID_ID 同源故推送可达，iOS 默认 IDFV 与上报值
- * 不一致会致杀进程呼入 VoIP 推送零到达，
+ * 版本段真源 = App MARKETING_VERSION（126.x/26.x 同分支双版本打包），
+ * 由 compat 层 applyUserAgentOverride 从 App 的 userAgentOverride 整串
+ * 注入（setUserAgentFull:，App 进程必经 didFinishLaunching 早于
+ * engineStart）；kSipUaVersion 仅注入缺失时兜底。服务器按「UA 版本
+ * 首位 >= 100」识别自研 WebRTC 栈并对其强制 DTLS（呼入 INVITE 下发带
+ * ICE/DTLS 的 offer）；旧栈版本首位为年份两位数（26/27…99），
+ * 永不 >= 100，新旧判定无歧义。
+ * 设备标识：优先取注入整串（含设备段），次取 setUserAgentDeviceId:
+ * 注入值（App 侧传 DeviceInfoBridgeSwift.getDeviceId()，与 PushReporter
+ * 上报的 userAgentId 同源——服务器按「REGISTER UA 设备段 ↔ 上报
+ * userAgentId」关联推送下发目标；安卓两端同为 ANDROID_ID 同源故推送
+ * 可达，iOS 默认 IDFV 与上报值不一致会致杀进程呼入 VoIP 推送零到达，
  * 详见 .h setUserAgentDeviceId: 注释）；未注入回退 IDFV，再取不到
  * 回退 unknown */
 static NSString * const kSipUaPrefix          = @"Mobile";
+/* 兜底版本号（非版本真源，升级版本不需要改这里） */
 static NSString * const kSipUaVersion         = @"126.9.1";
 static NSString * const kSipUaUnknownDeviceId = @"unknown";
 /* setUserAgentDeviceId: 注入值（nil = 未注入走 IDFV；仅引擎启动前设置，
  * buildUserAgent 只读，无并发写） */
 static NSString * sUserAgentDeviceId = nil;
+/* setUserAgentFull: 注入的完整 UA 串（"Mobile/{v}-iOS-{id}"，优先级
+ * 高于版本常量+设备段组合；nil = 未注入。仅引擎启动前设置，
+ * buildUserAgent 只读，无并发写——与 setUserAgentDeviceId 同纪律） */
+static NSString * sUserAgentFullOverride = nil;
 
 /* ICE STUN 服务器缺省兜底（服务器 basic-info stunAddresses 下发前）。
  * F4 候选极简化（对齐安卓上线实现）：rtpengine（ICE-lite）按
@@ -803,9 +810,23 @@ static void ys_fill_field(char *dst, size_t size, NSString *value)
     sUserAgentDeviceId = [deviceId copy];
 }
 
++ (void)setUserAgentFull:(NSString *)ua
+{
+    /* App 注入完整 UA 串（compat 层 applyUserAgentOverride 转发），
+     * 版本段=实际 MARKETING_VERSION、设备段与上报 userAgentId 同源；
+     * 须在 engineStart 前调用；nil/清空回退 版本常量+设备段 组合路径 */
+    sUserAgentFullOverride = [ua copy];
+}
+
 + (NSString *)buildUserAgent
 {
-    /* 版本段固定 126.9.1（SDK 独立版本序列，约定见常量区注释） */
+    /* 整串注入优先（版本段=实际 App 版本）；宽松格式校验防呆：
+     * 格式不符视为无效注入，走兜底路径（版本段=kSipUaVersion 常量） */
+    if (sUserAgentFullOverride.length > 0
+        && [sUserAgentFullOverride hasPrefix:@"Mobile/"]
+        && [sUserAgentFullOverride containsString:@"-iOS-"]) {
+        return sUserAgentFullOverride;
+    }
     NSString *deviceIdentifier = sUserAgentDeviceId;
     if (deviceIdentifier.length == 0) {
         deviceIdentifier = [UIDevice currentDevice].identifierForVendor.UUIDString;
