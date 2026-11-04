@@ -12,6 +12,6 @@ dependencyResolutionManagement {
     }
 }
 rootProject.name = "novoone-sdk"
-include ':compat'
+include ':novosdk'
 include ':sip-core'
 include ':libs:webrtc'
