@@ -44,7 +44,7 @@ import Foundation
 
 // MARK: - 网络状态(App:getNetworkStatus(call)?.networkInterfaceName,§1.1)
 
-@objcMembers public final class SoftphoneNetworkStatus: BridgeClass {
+@objcMembers public final class NovoSDKNetworkStatus: BridgeClass {
     public let networkInterfaceName: String?
 
     public init(networkInterfaceName: String?) {
@@ -95,16 +95,16 @@ import Foundation
 
 // MARK: - 事件流变更 / 网络状态(回调参数,容器形态)
 
-@objcMembers public final class SoftphoneChangedEvents: NSObject {}
+@objcMembers public final class NovoSDKChangedEvents: NSObject {}
 
-@objcMembers public final class SoftphoneChangedStreams: NSObject {}
+@objcMembers public final class NovoSDKChangedStreams: NSObject {}
 
-@objcMembers public final class SoftphoneNetworkConditionsRoundTrip: NSObject {
+@objcMembers public final class NovoSDKNetworkConditionsRoundTrip: NSObject {
     public var averageRoundTripTimeInMilliseconds: Double = -1
 }
 
-@objcMembers public final class SoftphoneNetworkConditions: NSObject {
-    public var roundTrip: SoftphoneNetworkConditionsRoundTrip = SoftphoneNetworkConditionsRoundTrip()
+@objcMembers public final class NovoSDKNetworkConditions: NSObject {
+    public var roundTrip: NovoSDKNetworkConditionsRoundTrip = NovoSDKNetworkConditionsRoundTrip()
 }
 
 @objcMembers public final class NetworkInterfaceSnapshot: NSObject {
@@ -128,12 +128,12 @@ import Foundation
 
 @objcMembers public final class ResourceHandle: NSObject {}
 
-@objcMembers public final class SoftphonePushNotificationCompletionInfo: NSObject {
+@objcMembers public final class NovoSDKPushNotificationCompletionInfo: NSObject {
     public var result: PushNotificationCompletionInfoResult = .NewData
 }
 
 /// 订阅状态包装(Acrobits NS_SWIFT_UNAVAILABLE 构造,compat 仅作回调参数容器)
-@objcMembers public final class SoftphoneSubscriptionStateType: NSObject {
+@objcMembers public final class NovoSDKSubscriptionStateType: NSObject {
     public let stateValue: SubscriptionStateTypeEnum
 
     public init(_ value: SubscriptionStateTypeEnum) {
@@ -148,11 +148,11 @@ import Foundation
     public func isError() -> Bool { stateValue == .Error }
 }
 
-@objcMembers public final class SoftphoneMessagingComposingInfo: NSObject {}
+@objcMembers public final class NovoSDKMessagingComposingInfo: NSObject {}
 
-// MARK: - SoftphonePreferences(App 消费属性子集)
+// MARK: - NovoSDKPreferences(App 消费属性子集)
 
-@objcMembers public final class SoftphonePreferences: NSObject {
+@objcMembers public final class NovoSDKPreferences: NSObject {
     public var trafficLogging = false
     public var echoSuppressionEnabled = false
     public var volumeBoostMicrophone: Int32 = 0

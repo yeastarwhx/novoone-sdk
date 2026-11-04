@@ -192,7 +192,7 @@ typedef NS_ENUM(NSInteger, SipCallPjsuaState) {
  * provider 能否重建用）。主线程限定（registry 契约） */
 - (BOOL)hasAnySession;
 
-/* 系统通话记录开关（SoftphonePreferences.includesCallKitCallsInRecent 落点，
+/* 系统通话记录开关（NovoSDKPreferences.includesCallKitCallsInRecent 落点，
  * 转投主线程后转发 CallKit coordinator；非主线程调用安全） */
 - (void)setCallsInRecentsEnabled:(BOOL)enabled;
 

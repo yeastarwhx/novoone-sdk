@@ -184,9 +184,9 @@ import Foundation
     }
 }
 
-// MARK: - SoftphoneTransients(transients 键名常量容器)
+// MARK: - NovoSDKTransients(transients 键名常量容器)
 
-@objcMembers public final class SoftphoneTransients: NSObject {
+@objcMembers public final class NovoSDKTransients: NSObject {
     @objc public static let callRate = "callRate"
     @objc public static let codecs = "codecs"
     @objc public static let networkInterfaceName = "networkInterfaceName"
@@ -194,9 +194,9 @@ import Foundation
     @objc public static let security = "security"
 }
 
-// MARK: - SoftphoneRemoteUser
+// MARK: - NovoSDKRemoteUser
 
-@objcMembers public final class SoftphoneRemoteUser: NSObject {
+@objcMembers public final class NovoSDKRemoteUser: NSObject {
     @objc public var genericUri: String?
     @objc public var displayName: String?
 
@@ -207,9 +207,9 @@ import Foundation
     }
 }
 
-// MARK: - SoftphoneEvent / SoftphoneCallEvent
+// MARK: - NovoSDKEvent / NovoSDKCallEvent
 
-@objcMembers public class SoftphoneEvent: NSObject {
+@objcMembers public class NovoSDKEvent: NSObject {
     @objc public var direction: EventDirectionType = .Unspecified
     @objc public var timestamp: Double = 0
     @objc public var sender: String?
@@ -218,18 +218,18 @@ import Foundation
     @objc public internal(set) var accountId: String?
     @objc public internal(set) var accountName: String?
     @objc public var transients: JsonDict?
-    @objc public internal(set) var remoteUsers: [SoftphoneRemoteUser] = []
-    private weak var stream: SoftphoneEventStream?
+    @objc public internal(set) var remoteUsers: [NovoSDKRemoteUser] = []
+    private weak var stream: NovoSDKEventStream?
 
     /// 事件 ID 单调递增,与 Acrobits 一样作为通话对象的稳定标识
     private static var nextEventId: UInt = 1
     private static let idLock = NSLock()
 
     override public init() {
-        SoftphoneEvent.idLock.lock()
-        eventId = SoftphoneEvent.nextEventId
-        SoftphoneEvent.nextEventId += 1
-        SoftphoneEvent.idLock.unlock()
+        NovoSDKEvent.idLock.lock()
+        eventId = NovoSDKEvent.nextEventId
+        NovoSDKEvent.nextEventId += 1
+        NovoSDKEvent.idLock.unlock()
         super.init()
         // Acrobits 语义:transients 惰性非 nil——App 的 get→mutate→写回
         // 模式(NovoEngine.call 的 if let call.transients)依赖恒真。
@@ -239,28 +239,28 @@ import Foundation
         transients = JsonDict()
     }
 
-    @objc public func setStream(_ stream: SoftphoneEventStream) {
+    @objc public func setStream(_ stream: NovoSDKEventStream) {
         self.stream = stream
         self.streamKey = stream.streamIdentifier
     }
 
-    @objc public func getStream() -> SoftphoneEventStream? {
+    @objc public func getStream() -> NovoSDKEventStream? {
         stream
     }
 
     @objc public func isCall() -> Bool {
-        self is SoftphoneCallEvent
+        self is NovoSDKCallEvent
     }
 
     @objc public func isMessage() -> Bool {
         false
     }
 
-    @objc public func asCall() -> SoftphoneCallEvent? {
-        self as? SoftphoneCallEvent
+    @objc public func asCall() -> NovoSDKCallEvent? {
+        self as? NovoSDKCallEvent
     }
 
-    @objc public func getRemoteUser(index: Int32) -> SoftphoneRemoteUser? {
+    @objc public func getRemoteUser(index: Int32) -> NovoSDKRemoteUser? {
         let idx = Int(index)
         guard idx >= 0, idx < remoteUsers.count else { return nil }
         return remoteUsers[idx]
@@ -276,7 +276,7 @@ import Foundation
 
 }
 
-@objcMembers public final class SoftphoneCallEvent: SoftphoneEvent {
+@objcMembers public final class NovoSDKCallEvent: NovoSDKEvent {
     @objc public private(set) var timeEstablished: Double = 0
     @objc public private(set) var duration: Double = 0
     @objc public var callResult: CallResultType = .Unknown
@@ -288,22 +288,22 @@ import Foundation
         super.init()
     }
 
-    @objc public static func create() -> SoftphoneCallEvent {
-        SoftphoneCallEvent()
+    @objc public static func create() -> NovoSDKCallEvent {
+        NovoSDKCallEvent()
     }
 
-    @objc public static func create(withRemoteUser user: SoftphoneRemoteUser) -> SoftphoneCallEvent {
-        let event = SoftphoneCallEvent()
+    @objc public static func create(withRemoteUser user: NovoSDKRemoteUser) -> NovoSDKCallEvent {
+        let event = NovoSDKCallEvent()
         event.remoteUsers = [user]
         return event
     }
 
-    @objc public static func create(withAccountId accountId: String, uri: String) -> SoftphoneCallEvent {
-        let event = SoftphoneCallEvent()
+    @objc public static func create(withAccountId accountId: String, uri: String) -> NovoSDKCallEvent {
+        let event = NovoSDKCallEvent()
         event.accountId = accountId
         event.uri = uri
         event.direction = .Outgoing
-        event.remoteUsers = [SoftphoneRemoteUser(genericUri: uri, displayName: nil)]
+        event.remoteUsers = [NovoSDKRemoteUser(genericUri: uri, displayName: nil)]
         return event
     }
 
@@ -329,9 +329,9 @@ import Foundation
     }
 }
 
-// MARK: - SoftphoneEventStream / SoftphoneStreamQuery
+// MARK: - NovoSDKEventStream / NovoSDKStreamQuery
 
-@objcMembers public final class SoftphoneEventStream: NSObject {
+@objcMembers public final class NovoSDKEventStream: NSObject {
     @objc public let streamIdentifier: String
     /// App 侧不需要流成员管理,compat 仅保留标识与注册表
 
@@ -341,21 +341,21 @@ import Foundation
     }
 
     private static let registryLock = NSLock()
-    private static var registry: [String: SoftphoneEventStream] = [:]
+    private static var registry: [String: NovoSDKEventStream] = [:]
     private static let legacyKey = "legacy-call-history"
 
-    @objc public static func generate() -> SoftphoneEventStream {
-        SoftphoneEventStream.load(UUID().uuidString)!
+    @objc public static func generate() -> NovoSDKEventStream {
+        NovoSDKEventStream.load(UUID().uuidString)!
     }
 
     /// 首次 load 创建并注册,后续返回同一实例(App 侧 load(legacyCallHistoryStreamKey()) 必须命中)
-    @objc public static func load(_ key: String) -> SoftphoneEventStream? {
+    @objc public static func load(_ key: String) -> NovoSDKEventStream? {
         registryLock.lock()
         defer { registryLock.unlock() }
         if let existing = registry[key] {
             return existing
         }
-        let stream = SoftphoneEventStream(identifier: key)
+        let stream = NovoSDKEventStream(identifier: key)
         registry[key] = stream
         return stream
     }
@@ -363,7 +363,7 @@ import Foundation
     @objc public func save() {}
 }
 
-@objcMembers public final class SoftphoneStreamQuery: NSObject {
+@objcMembers public final class NovoSDKStreamQuery: NSObject {
     @objc public static func legacyCallHistoryStreamKey() -> String {
         "legacy-call-history"
     }

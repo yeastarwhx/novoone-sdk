@@ -204,7 +204,7 @@ final class CompatAdapter: NSObject, SipEngineCallback {
     // ---- 注册表(主线程) ----
 
     /// sessionId → 门面事件对象(App 持续持有的同一实例,transients 存续)
-    private var eventsBySession: [Int64: SoftphoneCallEvent] = [:]
+    private var eventsBySession: [Int64: NovoSDKCallEvent] = [:]
     /// eventId → sessionId(App 调用入口反查)
     private var sessionByEvent: [UInt: Int64] = [:]
     /// sessionId → 引擎最近一次 session 快照字典
@@ -225,7 +225,7 @@ final class CompatAdapter: NSObject, SipEngineCallback {
     /// 已排程终态清理的会话(终态推送后排程一次,防重复)
     private var terminatingSessions: Set<Int64> = []
     /// post 后待引擎 session 关联的呼出事件(队列:连续快速呼出)
-    private var pendingOutgoing: [SoftphoneCallEvent] = []
+    private var pendingOutgoing: [NovoSDKCallEvent] = []
     /// 缓存的注册状态
     private var registrationState: RegistratorStateType = .None
     /// REGISTER 自定义头表(粘性,对齐 Android mRegisterHeaders)
@@ -240,8 +240,8 @@ final class CompatAdapter: NSObject, SipEngineCallback {
     /// 区别于 activeGroup 的查询语义)
     private var autoActiveGroupId: String?
 
-    /// 门面入口注册(App 经 SoftphoneInstance.setObserver 设置的观察者)
-    private weak var observerProxy: SoftphoneObserverProxyBridge?
+    /// 门面入口注册(App 经 NovoSDKInstance.setObserver 设置的观察者)
+    private weak var observerProxy: NovoSDKObserverProxyBridge?
 
     private var networkMonitor: NWPathMonitor?
     private var lastNetworkType: NetworkType = .None
@@ -254,7 +254,7 @@ final class CompatAdapter: NSObject, SipEngineCallback {
 
     // MARK: 观察者接入
 
-    func attach(observer: SoftphoneObserverProxyBridge) {
+    func attach(observer: NovoSDKObserverProxyBridge) {
         observerProxy = observer
         startNetworkWatchIfNeeded()
         startAudioRouteWatchIfNeeded()
@@ -278,7 +278,7 @@ final class CompatAdapter: NSObject, SipEngineCallback {
         }
     }
 
-    private func dispatch(_ block: (SoftphoneDelegateBridge) -> Void) {
+    private func dispatch(_ block: (NovoSDKDelegateBridge) -> Void) {
         if let delegate = observerProxy?.delegate {
             block(delegate)
         }
@@ -383,7 +383,7 @@ final class CompatAdapter: NSObject, SipEngineCallback {
     /// 推送路由按「REGISTER UA 设备段 ↔ PushReporter 上报 userAgentId」
     /// 关联,不同源 = VoIP push 零到达。必须 engineStart 前调
     private func applyUserAgentOverride() {
-        guard let override = SoftphoneBridge.instance().settings()?.getPreferences()?.userAgentOverride else {
+        guard let override = NovoSDKBridge.instance().settings()?.getPreferences()?.userAgentOverride else {
             return
         }
         // 整串注入:格式校验防呆在引擎侧(前缀 Mobile/ + 含 -iOS-),
@@ -496,8 +496,8 @@ final class CompatAdapter: NSObject, SipEngineCallback {
 
     // MARK: - 呼出链(post → startOutgoingCall)
 
-    func postOutgoing(_ event: SoftphoneEvent) -> EventsPostResult {
-        guard let call = event as? SoftphoneCallEvent, let number = call.uri, !number.isEmpty else {
+    func postOutgoing(_ event: NovoSDKEvent) -> EventsPostResult {
+        guard let call = event as? NovoSDKCallEvent, let number = call.uri, !number.isEmpty else {
             return .NoRecipient
         }
         guard engine.isStarted() else {
@@ -520,16 +520,16 @@ final class CompatAdapter: NSObject, SipEngineCallback {
 
     // MARK: - 会话查询(门面数据源)
 
-    private func sessionId(of event: SoftphoneCallEvent) -> Int64? {
+    private func sessionId(of event: NovoSDKCallEvent) -> Int64? {
         sessionByEvent[event.eventId]
     }
 
-    private func snapshot(of event: SoftphoneCallEvent) -> [String: Any]? {
+    private func snapshot(of event: NovoSDKCallEvent) -> [String: Any]? {
         guard let sessionId = sessionId(of: event) else { return nil }
         return snapshots[sessionId]
     }
 
-    private func callId(of event: SoftphoneCallEvent) -> Int? {
+    private func callId(of event: NovoSDKCallEvent) -> Int? {
         guard let sessionId = sessionId(of: event),
               let callId = snapshots[sessionId]?[SipSessionKeyCallId] as? Int else {
             return nil
@@ -555,7 +555,7 @@ final class CompatAdapter: NSObject, SipEngineCallback {
     /// getActive 契约(Acrobits:getActiveCalls ≡ Conferences.getCalls(getActive)):
     /// 当前活跃组的非终态事件;组被去激活(hold)时为空——App 的 refresh
     /// 据此把 activeCall 回落到 callList 条目(组形态,findEntry 才能命中)
-    func activeEvents() -> [SoftphoneCallEvent] {
+    func activeEvents() -> [NovoSDKCallEvent] {
         guard let group = activeGroup() else { return [] }
         return events(inGroup: group).filter { event in
             snapshot(of: event).map { !isTerminal($0) } ?? false
@@ -563,13 +563,13 @@ final class CompatAdapter: NSObject, SipEngineCallback {
     }
 
     /// getState 契约:最新快照视图状态映射(未知会话 nil)
-    func currentState(of event: SoftphoneCallEvent) -> CallStateType? {
+    func currentState(of event: NovoSDKCallEvent) -> CallStateType? {
         guard let snapshot = snapshot(of: event) else { return nil }
         return StateMapper.map(snapshot[SipSessionKeyCallStateView] as? String)
     }
 
     /// isAlive 契约:事件仍在注册表(close 移除后失效)
-    func isAlive(_ event: SoftphoneCallEvent) -> Bool {
+    func isAlive(_ event: NovoSDKCallEvent) -> Bool {
         sessionId(of: event) != nil
     }
 
@@ -592,11 +592,11 @@ final class CompatAdapter: NSObject, SipEngineCallback {
         return ordered
     }
 
-    func groupId(of event: SoftphoneCallEvent) -> String? {
+    func groupId(of event: NovoSDKCallEvent) -> String? {
         snapshot(of: event)?[SipSessionKeyGroupId] as? String
     }
 
-    func events(inGroup groupId: String) -> [SoftphoneCallEvent] {
+    func events(inGroup groupId: String) -> [NovoSDKCallEvent] {
         snapshots.keys.sorted().compactMap { sessionId in
             guard let snapshot = snapshots[sessionId], !isTerminal(snapshot),
                   (snapshot[SipSessionKeyGroupId] as? String) == groupId else {
@@ -730,7 +730,7 @@ final class CompatAdapter: NSObject, SipEngineCallback {
 
     // MARK: - 通话操作(门面转发)
 
-    func answer(_ event: SoftphoneCallEvent) -> Bool {
+    func answer(_ event: NovoSDKCallEvent) -> Bool {
         guard let snapshot = snapshot(of: event), !isTerminal(snapshot),
               let callId = callId(of: event) else {
             return false
@@ -739,7 +739,7 @@ final class CompatAdapter: NSObject, SipEngineCallback {
         return true
     }
 
-    func reject(_ event: SoftphoneCallEvent) -> Bool {
+    func reject(_ event: NovoSDKCallEvent) -> Bool {
         guard let snapshot = snapshot(of: event), !isTerminal(snapshot),
               let callId = callId(of: event) else {
             return false
@@ -750,7 +750,7 @@ final class CompatAdapter: NSObject, SipEngineCallback {
 
     /// close:终态滞留会话 → 注册表移除(App 关闭结束页);非终态 → 挂断。
     /// INVITE 未提交(callId=-1)按 groupId 挂断(引擎 gather 窗口专用入口)
-    func close(_ event: SoftphoneCallEvent) {
+    func close(_ event: NovoSDKCallEvent) {
         guard let sessionId = sessionId(of: event),
               let snapshot = snapshots[sessionId] else { return }
         if isTerminal(snapshot) {
@@ -793,12 +793,12 @@ final class CompatAdapter: NSObject, SipEngineCallback {
         dispatch { $0.onCallRepositoryChanged?() }
     }
 
-    func setHeld(_ event: SoftphoneCallEvent, held: Bool) {
+    func setHeld(_ event: NovoSDKCallEvent, held: Bool) {
         guard let callId = callId(of: event) else { return }
         engine.callHold(callId, held: held)
     }
 
-    func holdStates(of event: SoftphoneCallEvent) -> CallHoldStates? {
+    func holdStates(of event: NovoSDKCallEvent) -> CallHoldStates? {
         guard let snapshot = snapshot(of: event) else { return nil }
         return CallHoldStates(
             local: (snapshot[SipSessionKeyHoldFlag] as? Bool ?? false) ? .Held : .Active,
@@ -832,14 +832,14 @@ final class CompatAdapter: NSObject, SipEngineCallback {
         engine.callDtmf(callId, digits: String(Character(scalar)))
     }
 
-    func blindTransfer(from event: SoftphoneCallEvent, to target: SoftphoneCallEvent) {
+    func blindTransfer(from event: NovoSDKCallEvent, to target: NovoSDKCallEvent) {
         guard let callId = callId(of: event),
               let number = target.uri, !number.isEmpty else { return }
         engine.callXfer(callId, to: number)
     }
 
     @discardableResult
-    func attendedTransfer(source: SoftphoneCallEvent, target: SoftphoneCallEvent) -> Bool {
+    func attendedTransfer(source: NovoSDKCallEvent, target: NovoSDKCallEvent) -> Bool {
         guard let sourceCallId = callId(of: source), let targetCallId = callId(of: target) else {
             return false
         }
@@ -848,7 +848,7 @@ final class CompatAdapter: NSObject, SipEngineCallback {
     }
 
     /// 咨询转可选目标:其他非终态会话(单腿组模型,不含 source 自身)
-    func redirectTargets(excluding source: SoftphoneCallEvent) -> [SoftphoneCallEvent] {
+    func redirectTargets(excluding source: NovoSDKCallEvent) -> [NovoSDKCallEvent] {
         guard let sourceSessionId = sessionId(of: source) else { return [] }
         return activeSessionIds().compactMap { sessionId in
             sessionId == sourceSessionId ? nil : eventsBySession[sessionId]
@@ -857,7 +857,7 @@ final class CompatAdapter: NSObject, SipEngineCallback {
 
     // MARK: - SIP 头查询(findSipHeader:引擎缓存字段映射,终态关闭)
 
-    func findSipHeader(_ event: SoftphoneCallEvent, name: String) -> XmlTree? {
+    func findSipHeader(_ event: NovoSDKCallEvent, name: String) -> XmlTree? {
         guard let snapshot = snapshot(of: event), !isTerminal(snapshot) else { return nil }
         let value: String?
         switch name {
@@ -877,7 +877,7 @@ final class CompatAdapter: NSObject, SipEngineCallback {
     // MARK: - 统计(getCallQuality 异步 → 缓存 → 同步读,公式对齐 Android)
 
     /// App 侧强解包返回值(NovoEngine.getStatistics 的 `!`)——永不返回 nil
-    func statistics(of event: SoftphoneCallEvent) -> CallStatistics {
+    func statistics(of event: NovoSDKCallEvent) -> CallStatistics {
         let stats = sessionId(of: event).flatMap { statsCache[$0] }
         let jitterMs = (stats?["jitterMs"] as? Double) ?? 0
         let lossPct = (stats?["packetLossPct"] as? Double) ?? 0
@@ -894,7 +894,7 @@ final class CompatAdapter: NSObject, SipEngineCallback {
         return st
     }
 
-    func mediaStatus(of event: SoftphoneCallEvent) -> CallMediaStatus? {
+    func mediaStatus(of event: NovoSDKCallEvent) -> CallMediaStatus? {
         guard let sessionId = sessionId(of: event),
               let snapshot = snapshots[sessionId] else { return nil }
         let status = CallMediaStatus()
@@ -905,12 +905,12 @@ final class CompatAdapter: NSObject, SipEngineCallback {
 
     /// 网络接口名:取自通话质量轮询快照(getCallQuality JSON 的 network 字段,
     /// 引擎 currentNetworkName:Wi-Fi/cellular);无快照(非通话中)返回 nil
-    func networkStatus(of event: SoftphoneCallEvent) -> SoftphoneNetworkStatus? {
+    func networkStatus(of event: NovoSDKCallEvent) -> NovoSDKNetworkStatus? {
         guard let sessionId = sessionId(of: event),
               let network = statsCache[sessionId]?["network"] as? String else {
             return nil
         }
-        return SoftphoneNetworkStatus(networkInterfaceName: network.isEmpty ? nil : network)
+        return NovoSDKNetworkStatus(networkInterfaceName: network.isEmpty ? nil : network)
     }
 
     /// CONFIRMED 会话存在时开 1s 轮询(主线程;对齐 Android ensureStatsPolling)
@@ -1112,11 +1112,11 @@ final class CompatAdapter: NSObject, SipEngineCallback {
 
     func onLog(_ level: Int32, message: String?) {
         guard let message = message, !message.isEmpty else { return }
-        SoftphoneBridge.instance().log()?.dispatchToSink(message)
+        NovoSDKBridge.instance().log()?.dispatchToSink(message)
     }
 
     func onCallKitEvent(_ event: [AnyHashable: Any]?) {
-        // CallKit 动作事件由 Softphone_Cx/Coordinator 链消费(Phase 4),不外发
+        // CallKit 动作事件由 NovoSDK_Cx/Coordinator 链消费(Phase 4),不外发
     }
 
     // MARK: - 状态发布
@@ -1131,16 +1131,16 @@ final class CompatAdapter: NSObject, SipEngineCallback {
 
     // MARK: - 事件绑定与字段同步
 
-    private func bindOrSpawnEvent(sessionId: Int64, session: [String: Any]) -> SoftphoneCallEvent? {
+    private func bindOrSpawnEvent(sessionId: Int64, session: [String: Any]) -> NovoSDKCallEvent? {
         let incoming = isIncoming(session)
-        let event: SoftphoneCallEvent
+        let event: NovoSDKCallEvent
         if !incoming, !pendingOutgoing.isEmpty {
             event = pendingOutgoing.removeFirst()
         } else {
-            event = SoftphoneCallEvent.create()
+            event = NovoSDKCallEvent.create()
             event.accountId = "sip"
             if incoming, let number = session[SipSessionKeyRemoteNumber] as? String {
-                event.remoteUsers = [SoftphoneRemoteUser(genericUri: number, displayName: nil)]
+                event.remoteUsers = [NovoSDKRemoteUser(genericUri: number, displayName: nil)]
             }
         }
         eventsBySession[sessionId] = event
@@ -1148,13 +1148,13 @@ final class CompatAdapter: NSObject, SipEngineCallback {
         return event
     }
 
-    private func syncEventFields(_ event: SoftphoneCallEvent, session: [String: Any]) {
+    private func syncEventFields(_ event: NovoSDKCallEvent, session: [String: Any]) {
         let incoming = isIncoming(session)
         event.direction = incoming ? .Incoming : .Outgoing
         if let number = session[SipSessionKeyRemoteNumber] as? String {
             let callerIdName = session[SipSessionKeyCallerIdName] as? String
             if event.remoteUsers.isEmpty {
-                event.remoteUsers = [SoftphoneRemoteUser(genericUri: number, displayName: callerIdName)]
+                event.remoteUsers = [NovoSDKRemoteUser(genericUri: number, displayName: callerIdName)]
             } else {
                 event.remoteUsers[0].genericUri = number
                 if let callerIdName = callerIdName, !callerIdName.isEmpty {

@@ -3,7 +3,7 @@
 //  NovoOneApp
 //
 //  CallKit 协作模块实现（detail-design §4.3）。行为基准对齐线上
-//  Softphone_Cx_Delegate：cxCallUpdate 定制（supportsGrouping/Ungrouping=false、
+//  NovoSDK_Cx_Delegate：cxCallUpdate 定制（supportsGrouping/Ungrouping=false、
 //  localizedCallerName=displayName、分机 ^[0-9]{1,6}$ → generic handle）。
 //
 //  动作落点（均回引擎执行，coordinator 无独立通话状态）：
@@ -89,7 +89,7 @@ static NSString *CallKitReasonName(SipCallKitEndedReason reason)
 /* 已 fulfill 的 CXEndCallAction 的 uuid（用户经系统卡片拒接/挂断——系统侧
  * 已收口，sessionEnded 不再 reportCallEnded 重复上报） */
 @property (nonatomic, strong) NSMutableSet<NSUUID *> *endActionUuids;
-/* 系统通话记录开关（SoftphonePreferences.includesCallKitCallsInRecent 落点）：
+/* 系统通话记录开关（NovoSDKPreferences.includesCallKitCallsInRecent 落点）：
  * enabled = 目标值，providerInRecents = 现 provider configuration 值 */
 @property (nonatomic, assign) BOOL callsInRecentsEnabled;
 @property (nonatomic, assign) BOOL providerCallsInRecents;

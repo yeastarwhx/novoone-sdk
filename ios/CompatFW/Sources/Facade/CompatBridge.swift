@@ -2,7 +2,7 @@
 //  CompatBridge.swift
 //  CompatFW
 //
-//  Acrobits 兼容层:SoftphoneBridge / SoftphoneInstance / 8 个子模块门面。
+//  Acrobits 兼容层:NovoSDKBridge / NovoSDKInstance / 8 个子模块门面。
 //  API 形状逐字对齐 App 消费面;方法体经 CompatAdapter 接线
 //  SipWebrtcEngine(= Android SdkBridge.java 语义)。
 //
@@ -37,56 +37,56 @@ func compatMain<T>(_ body: () throws -> T) rethrows -> T {
     }
 }
 
-// MARK: - SoftphoneBridge
+// MARK: - NovoSDKBridge
 
-@objcMembers public final class SoftphoneBridge: NSObject {
+@objcMembers public final class NovoSDKBridge: NSObject {
     @objc public static var isDebug: Bool { false }
     @objc public static var build: UInt { 126 }
-    @objc public static var isInitialized: Bool { SoftphoneBridge.shared != nil }
+    @objc public static var isInitialized: Bool { NovoSDKBridge.shared != nil }
 
     /// 兼容 Acrobits initialize(license:error:);provisioning XML 由 compat 忽略
     @objc public static func initialize(_ license: String) throws {
         compatLog("initialize license=\(String(license.prefix(32)))...")
         try compatMain {
             guard shared == nil else {
-                let error = NSError(domain: "SoftphoneInitErrorDomain", code: 102,
+                let error = NSError(domain: "NovoSDKInitErrorDomain", code: 102,
                                     userInfo: [NSLocalizedDescriptionKey: "already initialized"])
                 throw error
             }
-            shared = SoftphoneInstance()
+            shared = NovoSDKInstance()
         }
     }
 
-    public static func instance() -> SoftphoneInstance {
+    public static func instance() -> NovoSDKInstance {
         compatMain {
             if let instance = shared {
                 return instance
             }
             // Acrobits 在未 initialize 时返回 nullptr 并断言;compat 放宽为惰性实例,
             // 引擎未初始化的行为由各子模块内部兜底(空集合/no-op + 日志)
-            let instance = SoftphoneInstance()
+            let instance = NovoSDKInstance()
             shared = instance
             return instance
         }
     }
 
-    private static var shared: SoftphoneInstance?
+    private static var shared: NovoSDKInstance?
 }
 
-// MARK: - SoftphoneInstance
+// MARK: - NovoSDKInstance
 
-@objcMembers public final class SoftphoneInstance: BridgeClass {
-    private lazy var callsModule = SoftphoneInstanceCalls()
-    private lazy var registrationModule = SoftphoneInstanceRegistration()
-    private lazy var audioModule = SoftphoneInstanceAudio()
-    private lazy var logModule = SoftphoneInstanceLog()
-    private lazy var eventsModule = SoftphoneInstanceEvents()
-    private lazy var notificationsModule = SoftphoneInstanceNotifications()
-    private lazy var settingsModule = SoftphoneInstanceSettings()
+@objcMembers public final class NovoSDKInstance: BridgeClass {
+    private lazy var callsModule = NovoSDKInstanceCalls()
+    private lazy var registrationModule = NovoSDKInstanceRegistration()
+    private lazy var audioModule = NovoSDKInstanceAudio()
+    private lazy var logModule = NovoSDKInstanceLog()
+    private lazy var eventsModule = NovoSDKInstanceEvents()
+    private lazy var notificationsModule = NovoSDKInstanceNotifications()
+    private lazy var settingsModule = NovoSDKInstanceSettings()
 
-    private var observerProxy: SoftphoneObserverProxyBridge?
+    private var observerProxy: NovoSDKObserverProxyBridge?
 
-    @objc public func setObserver(_ observer: SoftphoneObserverProxyBridge) {
+    @objc public func setObserver(_ observer: NovoSDKObserverProxyBridge) {
         compatMain {
             observerProxy = observer
             // 引擎回调分发入口注册(CompatAdapter 持 weak,观察者生命周期由 App 管)
@@ -95,106 +95,106 @@ func compatMain<T>(_ body: () throws -> T) rethrows -> T {
         compatLog("setObserver")
     }
 
-    @objc public func getObserver() -> SoftphoneObserverProxyBridge? {
+    @objc public func getObserver() -> NovoSDKObserverProxyBridge? {
         compatMain { observerProxy }
     }
 
-    public func calls() -> SoftphoneInstanceCalls? { callsModule }
-    public func registration() -> SoftphoneInstanceRegistration? { registrationModule }
-    public func audio() -> SoftphoneInstanceAudio? { audioModule }
-    public func log() -> SoftphoneInstanceLog? { logModule }
-    public func events() -> SoftphoneInstanceEvents? { eventsModule }
-    public func notifications() -> SoftphoneInstanceNotifications? { notificationsModule }
-    public func settings() -> SoftphoneInstanceSettings? { settingsModule }
+    public func calls() -> NovoSDKInstanceCalls? { callsModule }
+    public func registration() -> NovoSDKInstanceRegistration? { registrationModule }
+    public func audio() -> NovoSDKInstanceAudio? { audioModule }
+    public func log() -> NovoSDKInstanceLog? { logModule }
+    public func events() -> NovoSDKInstanceEvents? { eventsModule }
+    public func notifications() -> NovoSDKInstanceNotifications? { notificationsModule }
+    public func settings() -> NovoSDKInstanceSettings? { settingsModule }
 }
 
-// MARK: - SoftphoneInstanceCalls
+// MARK: - NovoSDKInstanceCalls
 
-@objcMembers public final class SoftphoneInstanceCalls: BridgeClass {
-    private lazy var conferencesModule = SoftphoneInstanceCallsConferences()
+@objcMembers public final class NovoSDKInstanceCalls: BridgeClass {
+    private lazy var conferencesModule = NovoSDKInstanceCallsConferences()
 
-    public func conferences() -> SoftphoneInstanceCallsConferences? { conferencesModule }
+    public func conferences() -> NovoSDKInstanceCallsConferences? { conferencesModule }
 
-    public func getActive() -> [SoftphoneCallEvent] {
+    public func getActive() -> [NovoSDKCallEvent] {
         compatMain { CompatAdapter.shared.activeEvents() }
     }
 
-    public func getState(_ call: SoftphoneCallEvent) -> CallStateType? {
+    public func getState(_ call: NovoSDKCallEvent) -> CallStateType? {
         compatMain { CompatAdapter.shared.currentState(of: call) }
     }
 
-    public func answerIncoming(call: SoftphoneCallEvent, media: CallDesiredMedia) -> Bool {
+    public func answerIncoming(call: NovoSDKCallEvent, media: CallDesiredMedia) -> Bool {
         compatMain { CompatAdapter.shared.answer(call) }
     }
 
     @discardableResult
-    public func rejectIncomingHere(_ call: SoftphoneCallEvent) -> Bool {
+    public func rejectIncomingHere(_ call: NovoSDKCallEvent) -> Bool {
         compatMain { CompatAdapter.shared.reject(call) }
     }
 
     @discardableResult
-    public func rejectIncomingEverywhere(_ call: SoftphoneCallEvent) -> Bool {
+    public func rejectIncomingEverywhere(_ call: NovoSDKCallEvent) -> Bool {
         // 单账户单腿:与 Here 等价
         compatMain { CompatAdapter.shared.reject(call) }
     }
 
-    public func ignoreIncoming(_ call: SoftphoneCallEvent) -> Bool {
+    public func ignoreIncoming(_ call: NovoSDKCallEvent) -> Bool {
         compatLog("ignoreIncoming(App 未消费,引擎无对应动作,no-op)")
         return false
     }
 
-    public func isAlive(_ call: SoftphoneCallEvent) -> Bool {
+    public func isAlive(_ call: NovoSDKCallEvent) -> Bool {
         compatMain { CompatAdapter.shared.isAlive(call) }
     }
 
-    public func setHeld(_ call: SoftphoneCallEvent, held: Bool) {
+    public func setHeld(_ call: NovoSDKCallEvent, held: Bool) {
         compatMain { CompatAdapter.shared.setHeld(call, held: held) }
     }
 
-    public func isHeld(_ call: SoftphoneCallEvent) -> CallHoldStates? {
+    public func isHeld(_ call: NovoSDKCallEvent) -> CallHoldStates? {
         compatMain { CompatAdapter.shared.holdStates(of: call) }
     }
 
-    public func close(_ call: SoftphoneCallEvent) {
+    public func close(_ call: NovoSDKCallEvent) {
         compatMain { CompatAdapter.shared.close(call) }
     }
 
-    public func getStatistics(_ call: SoftphoneCallEvent) -> CallStatistics? {
+    public func getStatistics(_ call: NovoSDKCallEvent) -> CallStatistics? {
         compatMain { CompatAdapter.shared.statistics(of: call) }
     }
 
-    public func getMediaStatus(_ call: SoftphoneCallEvent) -> CallMediaStatus? {
+    public func getMediaStatus(_ call: NovoSDKCallEvent) -> CallMediaStatus? {
         compatMain { CompatAdapter.shared.mediaStatus(of: call) }
     }
 
-    public func getNetworkStatus(_ call: SoftphoneCallEvent) -> SoftphoneNetworkStatus? {
+    public func getNetworkStatus(_ call: NovoSDKCallEvent) -> NovoSDKNetworkStatus? {
         compatMain { CompatAdapter.shared.networkStatus(of: call) }
     }
 
-    public func findSipHeader(_ call: SoftphoneCallEvent, headerName: String) -> XmlTree? {
+    public func findSipHeader(_ call: NovoSDKCallEvent, headerName: String) -> XmlTree? {
         compatMain { CompatAdapter.shared.findSipHeader(call, name: headerName) }
     }
 }
 
-// MARK: - SoftphoneInstanceCallsConferences(单腿组模型)
+// MARK: - NovoSDKInstanceCallsConferences(单腿组模型)
 
-@objcMembers public final class SoftphoneInstanceCallsConferences: BridgeClass {
+@objcMembers public final class NovoSDKInstanceCallsConferences: BridgeClass {
     public func list() -> [String] {
         compatMain { CompatAdapter.shared.groups() }
     }
 
-    public func getCalls(conference: String) -> [SoftphoneCallEvent] {
+    public func getCalls(conference: String) -> [NovoSDKCallEvent] {
         compatMain { CompatAdapter.shared.events(inGroup: conference) }
     }
 
-    public func getCalls(call: SoftphoneCallEvent) -> [SoftphoneCallEvent] {
+    public func getCalls(call: NovoSDKCallEvent) -> [NovoSDKCallEvent] {
         compatMain {
             guard let group = CompatAdapter.shared.groupId(of: call) else { return [] }
             return CompatAdapter.shared.events(inGroup: group)
         }
     }
 
-    public func get(_ call: SoftphoneCallEvent) -> String? {
+    public func get(_ call: NovoSDKCallEvent) -> String? {
         compatMain { CompatAdapter.shared.groupId(of: call) }
     }
 
@@ -202,7 +202,7 @@ func compatMain<T>(_ body: () throws -> T) rethrows -> T {
         compatMain { CompatAdapter.shared.events(inGroup: conference).count }
     }
 
-    public func getSize(call: SoftphoneCallEvent) -> Int {
+    public func getSize(call: NovoSDKCallEvent) -> Int {
         compatMain { CompatAdapter.shared.groupId(of: call) != nil ? 1 : 0 }
     }
 
@@ -217,7 +217,7 @@ func compatMain<T>(_ body: () throws -> T) rethrows -> T {
     }
 
     @discardableResult
-    public func setActive(call: SoftphoneCallEvent) -> Bool {
+    public func setActive(call: NovoSDKCallEvent) -> Bool {
         compatMain {
             guard let group = CompatAdapter.shared.groupId(of: call) else { return false }
             CompatAdapter.shared.setActiveGroup(group)
@@ -226,42 +226,42 @@ func compatMain<T>(_ body: () throws -> T) rethrows -> T {
     }
 
     @discardableResult
-    public func move(call: SoftphoneCallEvent, conference: String) -> Bool {
+    public func move(call: NovoSDKCallEvent, conference: String) -> Bool {
         compatLog("no-op: move eventId=\(call.eventId) -> \(conference)(单腿组模型)")
         return false
     }
 
     @discardableResult
-    public func move(call: SoftphoneCallEvent, target: SoftphoneCallEvent) -> Bool {
+    public func move(call: NovoSDKCallEvent, target: NovoSDKCallEvent) -> Bool {
         compatLog("no-op: move(call:target:)(单腿组模型)")
         return false
     }
 
-    public func split(call: SoftphoneCallEvent, activate: Bool) {
+    public func split(call: NovoSDKCallEvent, activate: Bool) {
         compatLog("no-op: split eventId=\(call.eventId)(单腿组模型)")
     }
 
-    public func transfer(call: SoftphoneCallEvent, target: SoftphoneCallEvent) {
+    public func transfer(call: NovoSDKCallEvent, target: NovoSDKCallEvent) {
         compatMain { CompatAdapter.shared.blindTransfer(from: call, to: target) }
     }
 
     @discardableResult
-    public func attendedTransfer(call: SoftphoneCallEvent, target: SoftphoneCallEvent) -> Bool {
+    public func attendedTransfer(call: NovoSDKCallEvent, target: NovoSDKCallEvent) -> Bool {
         compatMain { CompatAdapter.shared.attendedTransfer(source: call, target: target) }
     }
 }
 
-// MARK: - SoftphoneInstanceEvents
+// MARK: - NovoSDKInstanceEvents
 
-@objcMembers public final class SoftphoneInstanceEvents: BridgeClass {
-    public func post(_ event: SoftphoneEvent) -> EventsPostResult {
+@objcMembers public final class NovoSDKInstanceEvents: BridgeClass {
+    public func post(_ event: NovoSDKEvent) -> EventsPostResult {
         compatMain { CompatAdapter.shared.postOutgoing(event) }
     }
 }
 
-// MARK: - SoftphoneInstanceLog
+// MARK: - NovoSDKInstanceLog
 
-@objcMembers public final class SoftphoneInstanceLog: BridgeClass {
+@objcMembers public final class NovoSDKInstanceLog: BridgeClass {
     private var sink: Serializer?
     private(set) var buffer: [String] = []
     private let lock = NSLock()
@@ -306,9 +306,9 @@ func compatMain<T>(_ body: () throws -> T) rethrows -> T {
     }
 }
 
-// MARK: - SoftphoneInstanceRegistration
+// MARK: - NovoSDKInstanceRegistration
 
-@objcMembers public final class SoftphoneInstanceRegistration: BridgeClass {
+@objcMembers public final class NovoSDKInstanceRegistration: BridgeClass {
     private(set) var cachedAccount: AccountXml?
 
     @discardableResult
@@ -359,9 +359,9 @@ func compatMain<T>(_ body: () throws -> T) rethrows -> T {
     }
 }
 
-// MARK: - SoftphoneInstanceAudio
+// MARK: - NovoSDKInstanceAudio
 
-@objcMembers public final class SoftphoneInstanceAudio: BridgeClass {
+@objcMembers public final class NovoSDKInstanceAudio: BridgeClass {
     public func isMuted() -> Bool {
         compatMain { CompatAdapter.shared.muteState() }
     }
@@ -387,25 +387,25 @@ func compatMain<T>(_ body: () throws -> T) rethrows -> T {
     }
 }
 
-// MARK: - SoftphoneInstanceSettings / Notifications / Push
+// MARK: - NovoSDKInstanceSettings / Notifications / Push
 
-@objcMembers public final class SoftphoneInstanceSettings: BridgeClass {
-    private lazy var preferences = SoftphonePreferences()
+@objcMembers public final class NovoSDKInstanceSettings: BridgeClass {
+    private lazy var preferences = NovoSDKPreferences()
 
-    public func getPreferences() -> SoftphonePreferences? {
+    public func getPreferences() -> NovoSDKPreferences? {
         preferences
     }
 }
 
-@objcMembers public final class SoftphoneInstanceNotifications: BridgeClass {
-    private lazy var pushModule = SoftphoneInstanceNotificationPush()
+@objcMembers public final class NovoSDKInstanceNotifications: BridgeClass {
+    private lazy var pushModule = NovoSDKInstanceNotificationPush()
 
-    public func push() -> SoftphoneInstanceNotificationPush? {
+    public func push() -> NovoSDKInstanceNotificationPush? {
         pushModule
     }
 }
 
-@objcMembers public final class SoftphoneInstanceNotificationPush: BridgeClass {
+@objcMembers public final class NovoSDKInstanceNotificationPush: BridgeClass {
     public func setRegistrationId(token: Data?, usage: PushTokenUsage) {
         // Acrobits 语义:SDK 记录 token 并在变化时经 Push Token Reporter
         // 自动上报(App 账户 XML 的 pushTokenReporter* 节点提供模板;配置
@@ -415,11 +415,11 @@ func compatMain<T>(_ body: () throws -> T) rethrows -> T {
 
     @discardableResult
     public func handle(_ message: XmlTree, usage: PushTokenUsage,
-                       completion: ((SoftphonePushNotificationCompletionInfo?) -> Void)?) -> ResourceHandle? {
+                       completion: ((NovoSDKPushNotificationCompletionInfo?) -> Void)?) -> ResourceHandle? {
         compatMain { CompatAdapter.shared.handlePush(message, usage: usage) }
         // App 侧 completion 传 nil 且线上实测不依赖(Acrobits 同行为);
         // 有传入则立即回执
-        completion?(SoftphonePushNotificationCompletionInfo())
+        completion?(NovoSDKPushNotificationCompletionInfo())
         return ResourceHandle()
     }
 }

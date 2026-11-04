@@ -2,7 +2,7 @@
 """iOS 双引擎切换(终态版):App 工程 pbxproj 的 SPM 包引用切换。
 
 用法:
-  switch_engine.py native [app_ios_dir]    # 切自研(126.x):saas 包引用 -> 本地 SoftphoneCompat
+  switch_engine.py native [app_ios_dir]    # 切自研(126.x):Acrobits saas 远程包 -> 本地 NovoSDKCompat
   switch_engine.py acrobits [app_ios_dir]  # 回切 Acrobits(26.x):git restore 恢复 HEAD 基线
   switch_engine.py status [app_ios_dir]    # 当前引擎 / 版本 / pbxproj git 状态
   switch_engine.py selftest [app_ios_dir]  # 对该工程 git HEAD 基线跑 native 变换自检(只读不写)
@@ -23,6 +23,10 @@ ios 目录(含 NovoOneApp.xcodeproj)均可传入,relativePath 按两工程实际
 - acrobits 方向不做文本逆变换:xcodebuild -list/build 会规范化重写 pbxproj
   (包引用拆 section、注释名/URL 大小写改写、relativePath 加引号),逆变换
   正则在新格式上必然失配,故直接 git restore 回 HEAD 基线。
+- 双名字切换(11-03 标识剥离,2026-11-04):本地包 NovoSDKSwiftPackage 与
+  Acrobits 远程包不再同名顶替——native 变换在包引用之外同步替换
+  productDependency 的 productName 与注释名,App 侧 productName 引用
+  由脚本一并变换(同名红利废弃后这是双形态编译一致性的必要条件)。
 """
 import os
 import re
@@ -35,7 +39,7 @@ APP_MAIN_TARGET = "NovoOneApp"
 GIT_PATHSPEC = "NovoOneApp.xcodeproj/project.pbxproj"
 
 # 自研包绝对位置(本脚本所在 ios/ 下)
-SDK_COMPAT = pathlib.Path(__file__).resolve().parent / "SoftphoneCompat"
+SDK_COMPAT = pathlib.Path(__file__).resolve().parent / "NovoSDKCompat"
 
 REMOTE_BLOCK_RE = re.compile(
     r'(?P<id>\w{24}) /\* XCRemoteSwiftPackageReference "SoftphoneSwiftPackage-saas" \*/ = \{\n'
@@ -72,7 +76,7 @@ class AppProject:
         # 占位符 @ID@ 后期 replace 注入(%s/% 格式化会被路径中的 % 破坏);
         # relativePath 加引号——pbxproj 字符串值标准形式,含空格路径必须
         self.local_block = (
-            '@ID@ /* XCLocalSwiftPackageReference "SoftphoneSwiftPackage-saas" */ = {\n'
+            '@ID@ /* XCLocalSwiftPackageReference "NovoSDKSwiftPackage" */ = {\n'
             "\t\t\tisa = XCLocalSwiftPackageReference;\n"
             '\t\t\trelativePath = "' + self.local_rel + '";\n'
             "\t\t};"
@@ -180,7 +184,9 @@ def bump_expo_runtime_version(text: str) -> tuple:
 
 def transform_to_native(app: AppProject, text: str) -> tuple:
     """Acrobits 基线 -> native 形态;返回 (新文本, 摘要行列表)。
-    Expo.plist(存在时)在函数外单独 bump(native 分支主体处理)"""
+    Expo.plist(存在时)在函数外单独 bump(native 分支主体处理)。
+    双名字切换(11-03):包引用块之外,productDependency 的 productName 与
+    各处注释名一并 SoftphoneSwiftPackage-saas -> NovoSDKSwiftPackage"""
     notes = []
     if not REMOTE_BLOCK_RE.search(text):
         raise SystemExit("remote saas reference block not found (baseline changed?)")
@@ -188,8 +194,19 @@ def transform_to_native(app: AppProject, text: str) -> tuple:
         lambda mm: app.local_block.replace("@ID@", mm.group("id")), text, count=1)
     text = text.replace(
         'XCRemoteSwiftPackageReference "SoftphoneSwiftPackage-saas" */',
-        'XCLocalSwiftPackageReference "SoftphoneSwiftPackage-saas" */')
+        'XCLocalSwiftPackageReference "NovoSDKSwiftPackage" */')
+    text, n = re.subn(
+        r'productName = "SoftphoneSwiftPackage-saas";',
+        'productName = "NovoSDKSwiftPackage";', text)
+    if n == 0:
+        raise SystemExit("productDependency productName saas not found (baseline changed?)")
+    text = text.replace(
+        "/* SoftphoneSwiftPackage-saas in Frameworks */",
+        "/* NovoSDKSwiftPackage in Frameworks */")
+    text = text.replace(
+        "/* SoftphoneSwiftPackage-saas */", "/* NovoSDKSwiftPackage */")
     notes.append("saas package: XCRemote -> XCLocal (" + app.local_rel + ")")
+    notes.append(f"productName: SoftphoneSwiftPackage-saas -> NovoSDKSwiftPackage (x{n})")
     text, n = bump_versions_native(text)
     if n == 0:
         raise SystemExit("NovoOneApp MARKETING_VERSION 26.x.y not found")
@@ -275,7 +292,11 @@ def main() -> None:
         native, notes = transform_to_native(app, base)
         ok = ("XCLocalSwiftPackageReference" in native
               and "MARKETING_VERSION = 126." in native
-              and REMOTE_BLOCK_RE.search(native) is None)
+              and REMOTE_BLOCK_RE.search(native) is None
+              and 'productName = "NovoSDKSwiftPackage";' in native
+              # 收尾引号锚定:OEM 的 "SoftphoneSwiftPackage-saas-video" 是
+              # 合法保留项,裸前缀子串会误伤
+              and 'SoftphoneSwiftPackage-saas"' not in native)
         # Expo.plist bump 自检(HEAD 基线文本,只读不写)
         if app.expo_plist is not None:
             root = subprocess.run(

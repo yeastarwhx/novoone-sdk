@@ -32,7 +32,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		016CFE0533CA5D737989AEC1 /* Softphone_Swift.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = Softphone_Swift.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		016CFE0533CA5D737989AEC1 /* NovoSDK_Swift.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = NovoSDK_Swift.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		7C35D86FD4A0CABB14381635 /* Facade/CompatAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompatAdapter.swift; sourceTree = "<group>"; };
 		E34AC5DBB684ACCBF06A5FB1 /* Facade/CompatBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompatBridge.swift; sourceTree = "<group>"; };
 		F86DC2F2F873ED4C32B56580 /* Facade/CompatCx.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompatCx.swift; sourceTree = "<group>"; };
@@ -94,7 +94,7 @@
 		57E2457B7BE8AF36B6E50AF2 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				016CFE0533CA5D737989AEC1 /* Softphone_Swift.framework */,
+				016CFE0533CA5D737989AEC1 /* NovoSDK_Swift.framework */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -147,7 +147,7 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		BB76D5EBFEA0A60C8CAE2A18 /* Softphone_Swift */ = {
+		BB76D5EBFEA0A60C8CAE2A18 /* NovoSDK_Swift */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 40CEA85CB2B79B42C0318E09;
 			buildPhases = (
@@ -160,9 +160,9 @@
 			);
 			dependencies = (
 			);
-			name = Softphone_Swift;
-			productName = Softphone_Swift;
-			productReference = 016CFE0533CA5D737989AEC1 /* Softphone_Swift.framework */;
+			name = NovoSDK_Swift;
+			productName = NovoSDK_Swift;
+			productReference = 016CFE0533CA5D737989AEC1 /* NovoSDK_Swift.framework */;
 			productType = "com.apple.product-type.framework";
 		};
 /* End PBXNativeTarget section */
@@ -186,7 +186,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				BB76D5EBFEA0A60C8CAE2A18 /* Softphone_Swift */,
+				BB76D5EBFEA0A60C8CAE2A18 /* NovoSDK_Swift */,
 			);
 		};
 /* End PBXProject section */
@@ -261,7 +261,7 @@
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;
 				DEFINES_MODULE = YES;
-				MODULEMAP_FILE = "$(SRCROOT)/Sources/SipCore/Softphone_Swift.modulemap";
+				MODULEMAP_FILE = "$(SRCROOT)/Sources/SipCore/NovoSDK_Swift.modulemap";
 				GCC_PREPROCESSOR_DEFINITIONS = (
 					"$(inherited)",
 					"PJ_AUTOCONF=1",
@@ -303,11 +303,11 @@
 					"-framework",
 					CFNetwork,
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = net.yeastar.softphone.swift;
+				PRODUCT_BUNDLE_IDENTIFIER = net.yeastar.novosdk.swift;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				SWIFT_INSTALL_OBJC_HEADER = YES;
-				SWIFT_OBJC_INTERFACE_HEADER_NAME = Softphone_Swift.h;
+				SWIFT_OBJC_INTERFACE_HEADER_NAME = NovoSDK_Swift.h;
 			};
 			name = Debug;
 		};
@@ -317,7 +317,7 @@
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;
 				DEFINES_MODULE = YES;
-				MODULEMAP_FILE = "$(SRCROOT)/Sources/SipCore/Softphone_Swift.modulemap";
+				MODULEMAP_FILE = "$(SRCROOT)/Sources/SipCore/NovoSDK_Swift.modulemap";
 				GCC_PREPROCESSOR_DEFINITIONS = (
 					"$(inherited)",
 					"PJ_AUTOCONF=1",
@@ -359,11 +359,11 @@
 					"-framework",
 					CFNetwork,
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = net.yeastar.softphone.swift;
+				PRODUCT_BUNDLE_IDENTIFIER = net.yeastar.novosdk.swift;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				SWIFT_INSTALL_OBJC_HEADER = YES;
-				SWIFT_OBJC_INTERFACE_HEADER_NAME = Softphone_Swift.h;
+				SWIFT_OBJC_INTERFACE_HEADER_NAME = NovoSDK_Swift.h;
 			};
 			name = Release;
 		};

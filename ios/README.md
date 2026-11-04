@@ -1,7 +1,8 @@
 # iOS 双引擎 SDK(novoone-sdk/ios)
 
-iOS compat SDK:以 **Acrobits 兼容门面**(Softphone_Swift 类名/方法签名逐字对齐)+ **自研 SipWebrtcEngine**
-替换 Acrobits SoftphoneSwiftPackage-saas,App 工程零改动切换。
+iOS compat SDK:**NovoSDK 门面**(module `NovoSDK_Swift`、`NovoSDK*` 类名;方法签名形状对齐 Acrobits
+便于 App 迁移)+ **自研 SipWebrtcEngine**。11-03 标识剥离后本地包 `NovoSDKSwiftPackage` 与
+Acrobits 远程包不再同名顶替,双引擎切换由 switch_engine.py 双名字切换承担。
 
 ## 目录结构
 
@@ -13,9 +14,9 @@ ios/
 │   │   └── SipCore/          # 自研引擎层(SipWebrtcEngine / SipCallKitCoordinator / pjsip 桥)
 │   ├── Vendor/               # libpjsip-combined.a + WebRTC.xcframework(不入库,构建时就位)
 │   ├── tools/gen_pbxproj.py  # pbxproj 生成(rglob 自动纳编 .swift/.mm/.cpp,加文件免维护工程)
-│   └── Softphone_Swift.modulemap  # 显式 modulemap(引擎 ObjC 头进 module,Swift 门面可见)
-├── SoftphoneCompat/          # SPM 本地包壳(App 经它消费;product/target 名与 Acrobits 一致)
-│   ├── Binaries/             # Softphone_Swift.xcframework + WebRTC.xcframework(构建产物)
+│   └── Sources/SipCore/NovoSDK_Swift.modulemap  # 显式 modulemap(引擎 ObjC 头进 module,Swift 门面可见)
+├── NovoSDKCompat/            # SPM 本地包壳(App 经它消费;包名 NovoSDKSwiftPackage)
+│   ├── Binaries/             # NovoSDK_Swift.xcframework + WebRTC.xcframework(构建产物)
 │   └── Package.swift
 ├── build-ios-sdk.sh          # 构建链:合静态库 → framework → xcframework → Binaries
 └── switch_engine.py          # App 工程引擎切换(native/acrobits/status/selftest)
@@ -31,10 +32,10 @@ cd ios && ./build-ios-sdk.sh                 # 增量(复用 Vendor 静态库)
 
 依赖(缺省路径,可用参数覆盖):
 
-- pjsip 静态库:`novoone-app/ios/SipCore/pjsip-ios/lib/` 下 `*.a`(宏开形态)
-- WebRTC.xcframework:`novoone-app/ios/SipCore/Frameworks/WebRTC.xcframework`
+- pjsip 静态库:`novoone-app-sip/demo/libs/` 下 `*.a`(宏开形态)
+- WebRTC.xcframework:`CompatFW/Vendor/`(已就位则复用,缺省从 webrtc_checkout 拷贝)
 
-产物:`SoftphoneCompat/Binaries/Softphone_Swift.xcframework`(末尾有 pj* 符号抽查输出)。
+产物:`NovoSDKCompat/Binaries/NovoSDK_Swift.xcframework`(末尾有 pj* 符号抽查输出)。
 
 ## 引擎切换(App 工程)
 
@@ -42,8 +43,8 @@ App 工程 `novoone-app/ios/NovoOneApp.xcodeproj` 的 pbxproj 在 **git 内恒�
 native 形态由脚本即时产生、**不提交**(回切即恢复基线)。
 
 ```bash
-python3 switch_engine.py native     # 切自研:saas 包引用(远程->本地 SoftphoneCompat)
-                                    #   + NovoOneApp MARKETING_VERSION 26.9.x -> 126.9.x
+python3 switch_engine.py native     # 切自研:saas 包引用(远程->本地 NovoSDKCompat)
+                                    #   + productName 双名字变换 + MARKETING_VERSION 26.9.x -> 126.9.x
 python3 switch_engine.py acrobits   # 回 Acrobits:git restore 恢复 HEAD 基线(不做文本逆变换)
 python3 switch_engine.py status     # 当前引擎 / 版本 / pbxproj 状态
 python3 switch_engine.py selftest   # 对 git HEAD 基线跑 native 变换自检(只读)
@@ -60,8 +61,8 @@ python3 switch_engine.py selftest   # 对 git HEAD 基线跑 native 变换自检
 
 ## App 侧接入(native 形态)
 
-- SPM 包:`SoftphoneSwiftPackage-saas` 解析到 `../../novoone-sdk/ios/SoftphoneCompat`(本地)
-- App 源码零改动:import / 类名 / 方法签名均与 Acrobits 一致
+- SPM 包:`NovoSDKSwiftPackage` 解析到 `../../novoone-sdk/ios/NovoSDKCompat`(本地)
+- App 源码 NovoSDK 命名:`import NovoSDK_Swift` + `NovoSDK*` 类名(方法签名形状对齐 Acrobits)
 - App 工程编译流程不变(RN/Expo:`npm ci` + `pod install` + xcodebuild)
 - 注意:clone 后首次 `pod install` 需重跑一次以生成 `ios/build/generated/ios`(RN codegen 时序),
   否则 `ReactAppDependencyProvider` 的 CpHeader 报 No such file or directory

@@ -105,7 +105,7 @@ def main() -> None:
     )
     products_group = (
         f"\t\t{uid('Products', 'GR')} /* Products */ = {{\n\t\t\tisa = PBXGroup;\n"
-        f"\t\t\tchildren = (\n\t\t\t\t{uid('APPFW', 'FR')} /* Softphone_Swift.framework */,\n"
+        f"\t\t\tchildren = (\n\t\t\t\t{uid('APPFW', 'FR')} /* NovoSDK_Swift.framework */,\n"
         "\t\t\t);\n\t\t\tname = Products;\n\t\t\tsourceTree = \"<group>\";\n\t\t};"
     )
     sources_files = "".join(
@@ -128,7 +128,7 @@ def main() -> None:
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		{uid('APPFW', 'FR')} /* Softphone_Swift.framework */ = {{isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = Softphone_Swift.framework; sourceTree = BUILT_PRODUCTS_DIR; }};
+		{uid('APPFW', 'FR')} /* NovoSDK_Swift.framework */ = {{isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = NovoSDK_Swift.framework; sourceTree = BUILT_PRODUCTS_DIR; }};
 {chr(10).join(file_refs)}
 /* End PBXFileReference section */
 
@@ -160,7 +160,7 @@ def main() -> None:
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		{uid('TARGET', 'NT')} /* Softphone_Swift */ = {{
+		{uid('TARGET', 'NT')} /* NovoSDK_Swift */ = {{
 			isa = PBXNativeTarget;
 			buildConfigurationList = {uid('TARGET-CL', 'CL')};
 			buildPhases = (
@@ -173,9 +173,9 @@ def main() -> None:
 			);
 			dependencies = (
 			);
-			name = Softphone_Swift;
-			productName = Softphone_Swift;
-			productReference = {uid('APPFW', 'FR')} /* Softphone_Swift.framework */;
+			name = NovoSDK_Swift;
+			productName = NovoSDK_Swift;
+			productReference = {uid('APPFW', 'FR')} /* NovoSDK_Swift.framework */;
 			productType = "com.apple.product-type.framework";
 		}};
 /* End PBXNativeTarget section */
@@ -199,7 +199,7 @@ def main() -> None:
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				{uid('TARGET', 'NT')} /* Softphone_Swift */,
+				{uid('TARGET', 'NT')} /* NovoSDK_Swift */,
 			);
 		}};
 /* End PBXProject section */
@@ -257,7 +257,7 @@ def main() -> None:
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;
 				DEFINES_MODULE = YES;
-				MODULEMAP_FILE = \"$(SRCROOT)/Sources/SipCore/Softphone_Swift.modulemap\";
+				MODULEMAP_FILE = \"$(SRCROOT)/Sources/SipCore/NovoSDK_Swift.modulemap\";
 				GCC_PREPROCESSOR_DEFINITIONS = (
 					"$(inherited)",
 					"PJ_AUTOCONF=1",
@@ -299,11 +299,11 @@ def main() -> None:
 					"-framework",
 					CFNetwork,
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = net.yeastar.softphone.swift;
+				PRODUCT_BUNDLE_IDENTIFIER = net.yeastar.novosdk.swift;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				SWIFT_INSTALL_OBJC_HEADER = YES;
-				SWIFT_OBJC_INTERFACE_HEADER_NAME = Softphone_Swift.h;
+				SWIFT_OBJC_INTERFACE_HEADER_NAME = NovoSDK_Swift.h;
 			}};
 			name = Debug;
 		}};
@@ -313,7 +313,7 @@ def main() -> None:
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;
 				DEFINES_MODULE = YES;
-				MODULEMAP_FILE = \"$(SRCROOT)/Sources/SipCore/Softphone_Swift.modulemap\";
+				MODULEMAP_FILE = \"$(SRCROOT)/Sources/SipCore/NovoSDK_Swift.modulemap\";
 				GCC_PREPROCESSOR_DEFINITIONS = (
 					"$(inherited)",
 					"PJ_AUTOCONF=1",
@@ -355,11 +355,11 @@ def main() -> None:
 					"-framework",
 					CFNetwork,
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = net.yeastar.softphone.swift;
+				PRODUCT_BUNDLE_IDENTIFIER = net.yeastar.novosdk.swift;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				SWIFT_INSTALL_OBJC_HEADER = YES;
-				SWIFT_OBJC_INTERFACE_HEADER_NAME = Softphone_Swift.h;
+				SWIFT_OBJC_INTERFACE_HEADER_NAME = NovoSDK_Swift.h;
 			}};
 			name = Release;
 		}};

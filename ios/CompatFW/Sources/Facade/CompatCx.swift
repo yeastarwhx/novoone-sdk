@@ -2,7 +2,7 @@
 //  CompatCx.swift
 //  CompatFW
 //
-//  Acrobits 兼容层:Softphone_Cx(CallKit 门面,Phase 4 实装)与
+//  Acrobits 兼容层:NovoSDK_Cx(CallKit 门面,Phase 4 实装)与
 //  CallRedirectionManager(咨询转/盲转状态机,Phase 3 实装)。
 //
 
@@ -10,21 +10,21 @@ import Foundation
 import CallKit
 import Intents
 
-// MARK: - Softphone_Cx / Softphone_Cx_Delegate
+// MARK: - NovoSDK_Cx / NovoSDK_Cx_Delegate
 
-@objc public protocol Softphone_Cx_Delegate: NSObjectProtocol {
-    @objc optional func cxCallUpdate(_ callUpdate: CXCallUpdate, forCall call: SoftphoneCallEvent)
+@objc public protocol NovoSDK_Cx_Delegate: NSObjectProtocol {
+    @objc optional func cxCallUpdate(_ callUpdate: CXCallUpdate, forCall call: NovoSDKCallEvent)
     @objc optional func cxProviderConfiguration(_ configuration: CXProviderConfiguration) -> CXProviderConfiguration?
 }
 
-@objcMembers public final class Softphone_Cx: BridgeClass {
+@objcMembers public final class NovoSDK_Cx: BridgeClass {
     // 持有对齐 Acrobits API 面;cxCallUpdate 定制不透传——引擎 coordinator
     // 已内置等价实现(分机 generic handle/supportsGrouping=false 等,注释对齐线上)
-    public weak var delegate: (Softphone_Cx_Delegate)?
+    public weak var delegate: (NovoSDK_Cx_Delegate)?
 
-    private static let sharedInstance = Softphone_Cx()
+    private static let sharedInstance = NovoSDK_Cx()
 
-    @objc public static func instance() -> Softphone_Cx {
+    @objc public static func instance() -> NovoSDK_Cx {
         sharedInstance
     }
 
@@ -52,7 +52,7 @@ import Intents
         false
     }
 
-    @objc public func reportCall(_ call: SoftphoneCallEvent, updated update: CXCallUpdate) {
+    @objc public func reportCall(_ call: NovoSDKCallEvent, updated update: CXCallUpdate) {
         NSLog("[compat] reportCall eventId=\(call.eventId)")
     }
 
@@ -151,24 +151,24 @@ import Intents
 
 @objcMembers public final class SourceChangeData: NSObject {
     public internal(set) var type: CallRedirectType?
-    public internal(set) var newSource: SoftphoneCallEvent?
+    public internal(set) var newSource: NovoSDKCallEvent?
 }
 
 @objcMembers public final class TargetChangeData: NSObject {
     public internal(set) var type: CallRedirectType?
-    public internal(set) var source: SoftphoneCallEvent?
-    public internal(set) var newTarget: SoftphoneCallEvent?
+    public internal(set) var source: NovoSDKCallEvent?
+    public internal(set) var newTarget: NovoSDKCallEvent?
 }
 
 @objcMembers public final class StateChangeData: NSObject {
     public internal(set) var type: CallRedirectType?
-    public internal(set) var source: SoftphoneCallEvent?
+    public internal(set) var source: NovoSDKCallEvent?
     public internal(set) var newState: CallRedirectState?
 }
 
 @objcMembers public final class SuccessfulRedirectData: NSObject {
     public internal(set) var timestamp: Double = 0
-    public internal(set) var call: SoftphoneCallEvent?
+    public internal(set) var call: NovoSDKCallEvent?
     public internal(set) var sourceUri: String?
     public internal(set) var targetUri: String?
     public internal(set) var targetCallId: String?
@@ -176,7 +176,7 @@ import Intents
 
 @objcMembers public final class CallRedirectCapabilities: NSObject {
     public internal(set) var attendedTransferCapability: AttendedTransferCapability?
-    public internal(set) var attendedTransferTargets: [SoftphoneCallEvent] = []
+    public internal(set) var attendedTransferTargets: [NovoSDKCallEvent] = []
 
     public func canForward() -> Bool { false }
     public func canBlindTransfer() -> Bool { true }
@@ -212,8 +212,8 @@ import Intents
 
     public internal(set) var state: CallRedirectState?
     public internal(set) var currentRedirectFlow: CallRedirectType?
-    public internal(set) var redirectSource: SoftphoneCallEvent?
-    public internal(set) var redirectTarget: SoftphoneCallEvent?
+    public internal(set) var redirectSource: NovoSDKCallEvent?
+    public internal(set) var redirectTarget: NovoSDKCallEvent?
 
     private var stateDelegates = NSHashTable<NSObject>.weakObjects()
     private var sourceDelegates = NSHashTable<NSObject>.weakObjects()
@@ -252,7 +252,7 @@ import Intents
         if let object = delegate as? NSObject { successfulDelegates.remove(object) }
     }
 
-    public func getRedirectCapabilities(_ callEvent: SoftphoneCallEvent) -> CallRedirectCapabilities? {
+    public func getRedirectCapabilities(_ callEvent: NovoSDKCallEvent) -> CallRedirectCapabilities? {
         let targets = CompatAdapter.shared.redirectTargets(excluding: callEvent)
         let capabilities = CallRedirectCapabilities()
         if targets.isEmpty {
@@ -276,60 +276,60 @@ import Intents
         state = CallRedirectState(.Inactive)
     }
 
-    public func setBlindTransferSource(_ callEvent: SoftphoneCallEvent) {
+    public func setBlindTransferSource(_ callEvent: NovoSDKCallEvent) {
         redirectSource = callEvent
         currentRedirectFlow = CallRedirectType(.BlindTransfer)
         state = CallRedirectState(.SourceAssigned)
     }
 
-    public func setForwardingSource(_ callEvent: SoftphoneCallEvent) {
+    public func setForwardingSource(_ callEvent: NovoSDKCallEvent) {
         redirectSource = callEvent
         currentRedirectFlow = CallRedirectType(.Forward)
         state = CallRedirectState(.SourceAssigned)
     }
 
-    public func setAttendedTransferSource(_ callEvent: SoftphoneCallEvent) {
+    public func setAttendedTransferSource(_ callEvent: NovoSDKCallEvent) {
         redirectSource = callEvent
         currentRedirectFlow = CallRedirectType(.AttendedTransfer)
         state = CallRedirectState(.SourceAssigned)
     }
 
-    public func setAttendedTransferTarget(_ callEvent: SoftphoneCallEvent) {
+    public func setAttendedTransferTarget(_ callEvent: NovoSDKCallEvent) {
         redirectTarget = callEvent
         state = CallRedirectState(.TargetAssigned)
     }
 
-    public func isBlindTransferSource(_ callEvent: SoftphoneCallEvent) -> Bool {
+    public func isBlindTransferSource(_ callEvent: NovoSDKCallEvent) -> Bool {
         redirectSource === callEvent && currentRedirectFlow?.isBlindTransfer() == true
     }
 
-    public func isBlindTransferTarget(_ callEvent: SoftphoneCallEvent) -> Bool {
+    public func isBlindTransferTarget(_ callEvent: NovoSDKCallEvent) -> Bool {
         redirectTarget === callEvent && currentRedirectFlow?.isBlindTransfer() == true
     }
 
-    public func isForwardingSource(_ callEvent: SoftphoneCallEvent) -> Bool {
+    public func isForwardingSource(_ callEvent: NovoSDKCallEvent) -> Bool {
         redirectSource === callEvent && currentRedirectFlow?.isForward() == true
     }
 
-    public func isRedirectParticipant(_ callEvent: SoftphoneCallEvent) -> Bool {
+    public func isRedirectParticipant(_ callEvent: NovoSDKCallEvent) -> Bool {
         redirectSource === callEvent || redirectTarget === callEvent
     }
 
-    public func isAttendedTransferSource(_ callEvent: SoftphoneCallEvent) -> Bool {
+    public func isAttendedTransferSource(_ callEvent: NovoSDKCallEvent) -> Bool {
         redirectSource === callEvent && currentRedirectFlow?.isAttendedTransfer() == true
     }
 
-    public func isAttendedTransferTarget(_ callEvent: SoftphoneCallEvent) -> Bool {
+    public func isAttendedTransferTarget(_ callEvent: NovoSDKCallEvent) -> Bool {
         redirectTarget === callEvent && currentRedirectFlow?.isAttendedTransfer() == true
     }
 
-    public func performBlindTransferToTarget(_ callToBeTransferredTo: SoftphoneCallEvent) {
+    public func performBlindTransferToTarget(_ callToBeTransferredTo: NovoSDKCallEvent) {
         guard let source = redirectSource else { return }
         CompatAdapter.shared.blindTransfer(from: source, to: callToBeTransferredTo)
         state = CallRedirectState(.Succeeded)
     }
 
-    public func performForwardToTarget(_ callToBeTransferredTo: SoftphoneCallEvent) {
+    public func performForwardToTarget(_ callToBeTransferredTo: NovoSDKCallEvent) {
         NSLog("[compat] performForwardToTarget(一期不支持 Forward,引擎无对应动作)")
     }
 
@@ -342,7 +342,7 @@ import Intents
         }
     }
 
-    public func performAttendedTransferBetween(source: SoftphoneCallEvent, target: SoftphoneCallEvent) {
+    public func performAttendedTransferBetween(source: NovoSDKCallEvent, target: NovoSDKCallEvent) {
         if CompatAdapter.shared.attendedTransfer(source: source, target: target) {
             state = CallRedirectState(.Succeeded)
         } else {

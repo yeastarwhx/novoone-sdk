@@ -3,7 +3,7 @@
 //  CompatFW
 //
 //  Acrobits 兼容层:枚举 + ObjC 导入名全局常量 + toString 静态类。
-//  枚举成员与原始值逐字对齐 SoftphoneBridge.h(25.3.37)。
+//  枚举成员与原始值逐字对齐 Acrobits SoftphoneBridge.h(25.3.37)。
 //
 
 import Foundation
