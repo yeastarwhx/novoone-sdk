@@ -6,7 +6,7 @@ import android.database.Cursor;
 import android.net.Uri;
 
 /**
- * Acrobits 兼容：启动期 ContentProvider（Manifest 声明自动实例化）。
+ * 启动期 ContentProvider（Manifest 声明自动实例化，NovoSDK 生命周期钩子）。
  * 原 SDK 用于在 Application.onCreate 前初始化生命周期跟踪。
  */
 public class LifecycleTrackerInitializer extends ContentProvider {
