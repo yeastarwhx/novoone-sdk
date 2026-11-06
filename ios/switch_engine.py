@@ -27,6 +27,12 @@ ios 目录(含 NovoOneApp.xcodeproj)均可传入,relativePath 按两工程实际
   Acrobits 远程包不再同名顶替——native 变换在包引用之外同步替换
   productDependency 的 productName 与注释名,App 侧 productName 引用
   由脚本一并变换(同名红利废弃后这是双形态编译一致性的必要条件)。
+- shim 包(NovoSDKAcrobitsShim):Acrobits 基线常驻本地包(module
+  NovoSDK_Swift,typealias 再导出 Acrobits 真身 Softphone*),与远程
+  saas 包双引用共存;native 变换将 shim 五处引用一并剥除(自研形态
+  module 名由 NovoSDKCompat 顶替,不引用 shim)。engine_state 因此
+  改锚 productName NovoSDKSwiftPackage——native 独有特征,基线的
+  shim local 引用不再能区分形态。
 """
 import os
 import re
@@ -51,6 +57,61 @@ REMOTE_BLOCK_RE = re.compile(
     r"\t+\};\n"
     r"\t+\};"
 )
+
+# shim 包(NovoSDKAcrobitsShim)五处引用——native 变换剥除。基线手写与
+# xcodebuild 规范化两种格式都兼容(relativePath 引号可选、缩进 \t+)
+SHIM_BUILD_FILE_RE = re.compile(
+    r"\t\t\w{24} /\* NovoSDK_Swift in Frameworks \*/ = \{isa = PBXBuildFile;"
+    r" productRef = \w{24} /\* NovoSDK_Swift \*/; \};\n")
+SHIM_FRAMEWORKS_LINE_RE = re.compile(
+    r"\t+\w{24} /\* NovoSDK_Swift in Frameworks \*/,\n")
+SHIM_PKGREF_LINE_RE = re.compile(
+    r'\t+\w{24} /\* XCLocalSwiftPackageReference "NovoSDKAcrobitsShim" \*/,\n')
+SHIM_LOCAL_BLOCK_RE = re.compile(
+    r'\t\t\w{24} /\* XCLocalSwiftPackageReference "NovoSDKAcrobitsShim" \*/ = \{\n'
+    r"\t+isa = XCLocalSwiftPackageReference;\n"
+    r'\t+relativePath = "?NovoSDKAcrobitsShim"?;\n'
+    r"\t+\};\n")
+SHIM_PRODUCTDEP_BLOCK_RE = re.compile(
+    r'\t\t\w{24} /\* NovoSDK_Swift \*/ = \{\n'
+    r"\t+isa = XCSwiftPackageProductDependency;\n"
+    r'\t+package = \w{24} /\* XCLocalSwiftPackageReference "NovoSDKAcrobitsShim" \*/;\n'
+    r'\t+productName = "NovoSDK_Swift";\n'
+    r"\t+\};\n")
+
+# shim 接线的三个手写 pbxproj ID(剥除后残留断言用;native 产物必无)
+SHIM_IDS = (
+    "E4D5FA1130538F190051F770",  # XCLocalSwiftPackageReference
+    "E4D5FA1230538F190051F770",  # XCSwiftPackageProductDependency
+    "E4D5FA1330538F190051F770",  # PBXBuildFile
+)
+
+
+def strip_shim(text: str) -> tuple:
+    """剥除 Acrobits 基线中 shim(NovoSDKAcrobitsShim)的五处引用;返回
+    (新文本, 删除处数)。每处必须恰好命中一次,失配即报错(基线变更,或
+    shim 接线尚未提交——selftest 对 HEAD 基线跑,提交前属预期)。
+    五处均为 NovoOneApp target 接线;OEM(saas-video)是既有断点不接
+    shim——若日后给 OEM 接 shim,此处与上方五正则须同步扩展计数。
+    剥除后兜底断言:Xcode 若把接线重写成五正则之外的形态(如
+    packageProductDependencies 列表),exact-1 仍可能全过而残留悬空
+    ID/注释,此处兜住(shim ID 为本工程手写值,native 产物必无)"""
+    total = 0
+    for pat in (SHIM_BUILD_FILE_RE, SHIM_FRAMEWORKS_LINE_RE,
+                SHIM_PKGREF_LINE_RE, SHIM_LOCAL_BLOCK_RE,
+                SHIM_PRODUCTDEP_BLOCK_RE):
+        text, n = pat.subn("", text)
+        if n != 1:
+            raise SystemExit(
+                "shim strip expected 1 hit, got %d (baseline changed,"
+                " or shim wiring not yet committed?): %s"
+                % (n, pat.pattern[:60]))
+        total += n
+    if any(i in text for i in SHIM_IDS):
+        raise SystemExit("shim id residue after strip (rewritten wiring?)")
+    if "NovoSDKAcrobitsShim" in text:
+        raise SystemExit("shim package name residue after strip")
+    return text, total
 
 
 # ---------------- 目标工程解析 ----------------
@@ -192,6 +253,8 @@ def transform_to_native(app: AppProject, text: str) -> tuple:
         raise SystemExit("remote saas reference block not found (baseline changed?)")
     text = REMOTE_BLOCK_RE.sub(
         lambda mm: app.local_block.replace("@ID@", mm.group("id")), text, count=1)
+    text, shim_n = strip_shim(text)
+    notes.append(f"shim NovoSDKAcrobitsShim: stripped ({shim_n} refs)")
     text = text.replace(
         'XCRemoteSwiftPackageReference "SoftphoneSwiftPackage-saas" */',
         'XCLocalSwiftPackageReference "NovoSDKSwiftPackage" */')
@@ -259,7 +322,9 @@ def write_version_marker(app: AppProject, native: bool, base: str = None) -> Non
 
 
 def engine_state(text: str) -> str:
-    return "native" if "XCLocalSwiftPackageReference" in text else "acrobits"
+    """native 特征锚定:productName NovoSDKSwiftPackage 仅 native 产物有
+    (Acrobits 基线的 shim 也是 XCLocalSwiftPackageReference,旧判据已失效)"""
+    return "native" if 'productName = "NovoSDKSwiftPackage";' in text else "acrobits"
 
 
 def print_status(app: AppProject) -> None:
@@ -296,7 +361,11 @@ def main() -> None:
               and 'productName = "NovoSDKSwiftPackage";' in native
               # 收尾引号锚定:OEM 的 "SoftphoneSwiftPackage-saas-video" 是
               # 合法保留项,裸前缀子串会误伤
-              and 'SoftphoneSwiftPackage-saas"' not in native)
+              and 'SoftphoneSwiftPackage-saas"' not in native
+              # shim 五处引用须全部剥除(分号锚定,NovoSDKSwiftPackage
+              # 是不同串不受影响)
+              and "NovoSDKAcrobitsShim" not in native
+              and 'productName = "NovoSDK_Swift";' not in native)
         # Expo.plist bump 自检(HEAD 基线文本,只读不写)
         if app.expo_plist is not None:
             root = subprocess.run(
@@ -311,6 +380,33 @@ def main() -> None:
                 if expo_out.returncode == 0:
                     expo_new, n = bump_expo_runtime_version(expo_out.stdout)
                     ok = ok and n > 0 and "126." in expo_new
+        # saas 版本双声明一致性:pbxproj 远程引用的 minimumVersion 与 shim 包
+        # Package.swift 的 from: 须同版本——只升一处会令 SPM 对同一包解析出
+        # 不可交约束,且报错位置(shim 包内)远离实际改动(pbxproj)。shim 包
+        # 尚未入库时 HEAD 无该文件,此检查跳过(提交后生效)。
+        shim_pkg = pathlib.Path(
+            app.pbxproj.parents[1], "NovoSDKAcrobitsShim", "Package.swift")
+        remote_m = REMOTE_BLOCK_RE.search(base)
+        if remote_m is not None and shim_pkg.is_file():
+            root = subprocess.run(
+                ["git", "-C", app.git_cwd, "rev-parse", "--show-toplevel"],
+                capture_output=True, text=True)
+            if root.returncode == 0:
+                rel = shim_pkg.resolve().relative_to(root.stdout.strip())
+                pkg_out = subprocess.run(
+                    ["git", "-C", app.git_cwd, "show", "HEAD:" + str(rel)],
+                    capture_output=True, text=True)
+                if pkg_out.returncode == 0:
+                    v_pbx = re.search(
+                        r"minimumVersion = ([\d.]+);", remote_m.group(0))
+                    v_pkg = re.search(r'from:\s*"([\d.]+)"', pkg_out.stdout)
+                    same = (v_pbx is not None and v_pkg is not None
+                            and v_pbx.group(1) == v_pkg.group(1))
+                    ok = ok and same
+                    if not same:
+                        print("  ! saas version drift: pbxproj=%s shim=%s"
+                              % (v_pbx.group(1) if v_pbx else "?",
+                                 v_pkg.group(1) if v_pkg else "?"))
         print("selftest (native transform over git HEAD baseline):",
               "PASS" if ok else "FAIL")
         for line in notes:
