@@ -1,4 +1,4 @@
-package com.novosdk.util;
+package com.novosdk.ali;
 
 import org.xmlpull.v1.XmlPullParser;
 
@@ -128,18 +128,51 @@ public class Xml {
     public String toString() {
         StringBuilder sb = new StringBuilder("<").append(mName);
         for (Map.Entry<String, String> e : mAttributes.entrySet()) {
-            sb.append(' ').append(e.getKey()).append("=\"").append(e.getValue()).append('"');
+            sb.append(' ').append(e.getKey()).append("=\"")
+                    .append(escape(e.getValue())).append('"');
         }
         sb.append('>');
         for (Map.Entry<String, String> e : mChildValues.entrySet()) {
             sb.append('<').append(e.getKey()).append('>')
-                    .append(e.getValue())
+                    .append(escape(e.getValue()))
                     .append("</").append(e.getKey()).append('>');
         }
         for (Xml child : mChildren) {
             sb.append(child.toString());
         }
         sb.append("</").append(mName).append('>');
+        return sb.toString();
+    }
+
+    /**
+     * XML 文本转义（值面：属性值/叶文本）。不转义时密码/显示名含 & < > "
+     * 会产出畸形 XML，真身解析失败静默兜底空树（账户保存为空账号——
+     * 2026-11-06 代码审查修复）。
+     */
+    private static String escape(String v) {
+        if (v == null) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder(v.length());
+        for (int i = 0; i < v.length(); i++) {
+            char c = v.charAt(i);
+            switch (c) {
+                case '&':
+                    sb.append("&amp;");
+                    break;
+                case '<':
+                    sb.append("&lt;");
+                    break;
+                case '>':
+                    sb.append("&gt;");
+                    break;
+                case '"':
+                    sb.append("&quot;");
+                    break;
+                default:
+                    sb.append(c);
+            }
+        }
         return sb.toString();
     }
 

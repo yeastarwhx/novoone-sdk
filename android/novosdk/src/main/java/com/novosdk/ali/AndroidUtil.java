@@ -1,4 +1,4 @@
-package com.novosdk.util;
+package com.novosdk.ali;
 
 import android.app.Application;
 import android.content.Context;

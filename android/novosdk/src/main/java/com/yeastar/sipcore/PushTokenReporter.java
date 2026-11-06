@@ -11,7 +11,7 @@ import java.security.MessageDigest;
 import java.util.UUID;
 import java.util.concurrent.Executors;
 
-import com.novosdk.util.AndroidUtil;
+import com.novosdk.ali.AndroidUtil;
 
 /**
  * FCM token 上报 uc-push（SDK 内置，对齐 Acrobits pushTokenReporter 机制）。

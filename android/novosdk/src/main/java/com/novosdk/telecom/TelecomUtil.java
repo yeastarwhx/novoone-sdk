@@ -65,7 +65,7 @@ public final class TelecomUtil {
             return sRegisteredHandle;
         }
         try {
-            Context ctx = com.novosdk.util.AndroidUtil.getApplicationContext();
+            Context ctx = com.novosdk.ali.AndroidUtil.getApplicationContext();
             if (ctx == null) {
                 return null;
             }

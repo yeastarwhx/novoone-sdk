@@ -12,7 +12,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 
-import com.novosdk.util.AndroidUtil;
+import com.novosdk.ali.AndroidUtil;
 import com.novosdk.account.AccountXml;
 import com.novosdk.data.AudioRoute;
 import com.novosdk.data.Call;
@@ -60,7 +60,7 @@ public final class Instance {
      * SDK 初始化：偏好实例化（宿主 preferencesClass 反射构造）+
      * Activity 追踪装配 + 冷启动账号快照恢复（引擎启动延后到账号注册）。
      */
-    public static void init(Context context, com.novosdk.util.Xml provisioning,
+    public static void init(Context context, com.novosdk.ali.Xml provisioning,
                             Class<?> preferencesClass) {
         AndroidUtil.setContext(context);
         SdkBridge.get().init(context);
@@ -289,14 +289,14 @@ public final class Instance {
          * 查询收到的 SIP 头（来电 INVITE 头缓存；接通后对话框切换不可再读，
          * App 在 IncomingRinging 时把头值写入 transients 供接通后读取）。
          */
-        public static com.novosdk.util.Xml findSipHeader(CallEvent event, String name) {
+        public static com.novosdk.ali.Xml findSipHeader(CallEvent event, String name) {
             CallSession s = session(event);
             if (s == null || s.callId < 0 || name == null) {
                 return null;
             }
             String value = bridge().engine().callGetHeader(s.callId, name);
             return value != null
-                    ? new com.novosdk.util.Xml("header").setValue(value) : null;
+                    ? new com.novosdk.ali.Xml("header").setValue(value) : null;
         }
     }
 
@@ -431,7 +431,7 @@ public final class Instance {
                 return null;
             }
             SdkBridge.AccountSnapshot snap = bridge().accountSnapshot();
-            com.novosdk.util.Xml xml = new com.novosdk.util.Xml(
+            com.novosdk.ali.Xml xml = new com.novosdk.ali.Xml(
                     com.novosdk.data.Account.ACCOUNT);
             xml.setAttribute(com.novosdk.data.Account.Attributes.ID,
                     snap.id != null ? snap.id : "");
@@ -541,7 +541,7 @@ public final class Instance {
 
             /** 推送到达：唤醒注册（引擎就绪 + re-REGISTER，携带已注入的
              *  REGISTER 自定义头） */
-            public static boolean handle(com.novosdk.util.Xml pushData, boolean highPriority) {
+            public static boolean handle(com.novosdk.ali.Xml pushData, boolean highPriority) {
                 try {
                     return SdkBridge.get().wakeupByPush();
                 } catch (Throwable t) {

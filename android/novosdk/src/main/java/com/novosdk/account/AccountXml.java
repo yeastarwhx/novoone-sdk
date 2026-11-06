@@ -1,6 +1,6 @@
 package com.novosdk.account;
 
-import com.novosdk.util.Xml;
+import com.novosdk.ali.Xml;
 import com.novosdk.mergeable.MergeableNodeAttributes;
 
 /**

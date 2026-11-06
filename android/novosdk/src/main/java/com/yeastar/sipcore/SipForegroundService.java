@@ -47,7 +47,7 @@ public class SipForegroundService extends Service {
             return;
         }
         try {
-            Context ctx = com.novosdk.util.AndroidUtil.getApplicationContext();
+            Context ctx = com.novosdk.ali.AndroidUtil.getApplicationContext();
             ctx.startForegroundService(new Intent(ctx, SipForegroundService.class));
         } catch (Throwable t) {
             android.util.Log.w(TAG, "start failed (background FGS restriction?): " + t);
@@ -58,7 +58,7 @@ public class SipForegroundService extends Service {
     /** 停止（登出/引擎关停） */
     public static void stop() {
         try {
-            Context ctx = com.novosdk.util.AndroidUtil.getApplicationContext();
+            Context ctx = com.novosdk.ali.AndroidUtil.getApplicationContext();
             ctx.stopService(new Intent(ctx, SipForegroundService.class));
         } catch (Throwable ignored) {
         }

@@ -26,7 +26,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
-import com.novosdk.util.AndroidUtil;
+import com.novosdk.ali.AndroidUtil;
 import com.novosdk.data.AudioRoute;
 import com.novosdk.data.Call;
 import com.novosdk.NetworkType;
@@ -118,8 +118,8 @@ public final class SdkBridge implements EngineCallback {
     private volatile Listeners mObserver;
 
     /* transients：eventId → Dict（跨 CallEvent 实例存续） */
-    private final ConcurrentHashMap<Long, com.novosdk.util.Json.Dict> mTransients =
-            new ConcurrentHashMap<Long, com.novosdk.util.Json.Dict>();
+    private final ConcurrentHashMap<Long, com.novosdk.ali.Json.Dict> mTransients =
+            new ConcurrentHashMap<Long, com.novosdk.ali.Json.Dict>();
 
     /* 事件分发去重：已发过 OnNewEvent/OnNewCall 的会话 */
     private final ConcurrentHashMap<Long, Boolean> mAnnounced =
@@ -305,11 +305,11 @@ public final class SdkBridge implements EngineCallback {
     }
 
     /** eventId 的 transients（get-or-create） */
-    public com.novosdk.util.Json.Dict transientsFor(long eventId) {
-        com.novosdk.util.Json.Dict dict = mTransients.get(eventId);
+    public com.novosdk.ali.Json.Dict transientsFor(long eventId) {
+        com.novosdk.ali.Json.Dict dict = mTransients.get(eventId);
         if (dict == null) {
-            dict = new com.novosdk.util.Json.Dict();
-            com.novosdk.util.Json.Dict prev = mTransients.putIfAbsent(eventId, dict);
+            dict = new com.novosdk.ali.Json.Dict();
+            com.novosdk.ali.Json.Dict prev = mTransients.putIfAbsent(eventId, dict);
             if (prev != null) {
                 dict = prev;
             }

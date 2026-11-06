@@ -1,6 +1,6 @@
 package com.novosdk.event;
 
-import com.novosdk.util.Json;
+import com.novosdk.ali.Json;
 
 /**
  * 通话事件（NovoSDK softphone API 层）。

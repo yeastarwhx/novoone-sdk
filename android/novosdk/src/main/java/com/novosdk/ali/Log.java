@@ -1,4 +1,4 @@
-package com.novosdk.util;
+package com.novosdk.ali;
 
 /**
  * SDK 侧日志器（NovoSDK softphone API 层）。

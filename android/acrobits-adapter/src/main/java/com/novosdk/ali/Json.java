@@ -1,4 +1,4 @@
-package com.novosdk.util;
+package com.novosdk.ali;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
