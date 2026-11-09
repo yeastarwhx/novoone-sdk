@@ -622,26 +622,27 @@ static int build_dst_url(pjsua_acc_id acc_id, const char *dst_number,
 	return 0;
 }
 
-/* 解析 g_invite_headers 的 "Name: Value" 行（'\n' 分隔）构造 msg_data。
- * 头节点与 name/value 用静态存储：pjsua_call_make_call_with_sdp_str
+/* 解析 "Name: Value" 行（'\n' 分隔）构造 msg_data（呼出预置头与
+ * re-INVITE 附加头共用）。头节点与 name/value 用静态存储：
+ * pjsua_call_make_call_with_sdp_str / pjsua_call_reinvite_with_sdp_str
  * 内部（pjsua_process_msg_data）会把头 clone 进消息 pool，调用返回后
  * 本列表即失效可复用 */
-static int build_invite_msg_data(pjsua_msg_data *msg_data)
+static int build_msg_data_from_lines(pjsua_msg_data *msg_data, const char *src)
 {
 	static pjsip_generic_string_hdr hdrs[8];
 	static char name_buf[8][64];
 	static char value_buf[8][128];
-	char *p = g_invite_headers;
+	const char *p = src;
 	int count = 0;
 
 	pjsua_msg_data_init(msg_data);
 
 	while (*p && count < 8) {
-		char *line_end = strchr(p, '\n');
-		char *colon = strchr(p, ':');
-		char *name_end;
-		char *value_start;
-		char *value_end;
+		const char *line_end = strchr(p, '\n');
+		const char *colon = strchr(p, ':');
+		const char *name_end;
+		const char *value_start;
+		const char *value_end;
 		int name_len;
 		int value_len;
 
@@ -811,7 +812,7 @@ int ys_make_call_with_sdp(pjsua_acc_id acc_id, const char *dst_number,
 	/* 应用预置的呼出自定义头（如 X-Request-ID），一次性消费 */
 	pjsua_msg_data msg_data;
 	pjsua_msg_data *p_msg_data = NULL;
-	if (g_invite_headers[0] && build_invite_msg_data(&msg_data) > 0) {
+	if (g_invite_headers[0] && build_msg_data_from_lines(&msg_data, g_invite_headers) > 0) {
 		p_msg_data = &msg_data;
 		PJ_LOG(4, (THIS_FILE, "ys_make_call_with_sdp: %d custom header(s)"
 		           " attached", (int)pj_list_size(&msg_data.hdr_list)));
@@ -849,7 +850,8 @@ int ys_answer_call_with_sdp(pjsua_call_id call_id, unsigned code,
 	return 0;
 }
 
-int ys_reinvite_with_sdp(pjsua_call_id call_id, const char *sdp_str)
+int ys_reinvite_with_sdp(pjsua_call_id call_id, const char *sdp_str,
+			 const char *headers)
 {
 	if (!sdp_str) {
 		PJ_LOG(1, (THIS_FILE, "ys_reinvite_with_sdp: invalid parameters"));
@@ -859,8 +861,20 @@ int ys_reinvite_with_sdp(pjsua_call_id call_id, const char *sdp_str)
 	ys_thread_register();
 
 	pj_str_t sdp = pj_str((char *)sdp_str);
+	pjsua_msg_data msg_data;
+	int hdr_count = 0;
+	pjsua_msg_data_init(&msg_data);
+	if (headers && headers[0]) {
+		hdr_count = build_msg_data_from_lines(&msg_data, headers);
+		if (hdr_count < 0) {
+			/* 解析失败按无附加头继续（调用方语义见头文件注释） */
+			PJ_LOG(2, (THIS_FILE, "ys_reinvite_with_sdp: header parse"
+				" failed (%d), continue without", hdr_count));
+			pjsua_msg_data_init(&msg_data);
+		}
+	}
 	pj_status_t status = pjsua_call_reinvite_with_sdp_str(
-		call_id, &sdp, NULL, NULL);
+		call_id, &sdp, NULL, hdr_count > 0 ? &msg_data : NULL);
 	if (status != PJ_SUCCESS) {
 		PJ_LOG(1, (THIS_FILE, "ys_reinvite_with_sdp: failed: %d", status));
 		return -1;

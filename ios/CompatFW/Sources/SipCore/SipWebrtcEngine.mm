@@ -69,6 +69,14 @@ static NSString * sUserAgentDeviceId = nil;
  * buildUserAgent 只读，无并发写——与 setUserAgentDeviceId 同纪律） */
 static NSString * sUserAgentFullOverride = nil;
 
+/* re-INVITE 附加头（compat 桥接：App 经 includeNonStandardSipHeader(INVITE)
+ * 注入，如换网场景的 X-NetworkChanged；粘性直到清除）。re-INVITE 组包时
+ * 与会话级 X-Request-ID 一并携带——对齐旧栈行为：所有 in-dialog
+ * re-INVITE 沿用本通对话 requestId，换网时附加换网标志头。仅主线程读写
+ * （setter 走 runOnMain，sendReinviteWithLocalSdp 调用点均收敛主队列），
+ * 无并发写 */
+static NSString * sReinviteExtraHeaders = nil;
+
 /* ICE STUN 服务器缺省兜底（服务器 basic-info stunAddresses 下发前）。
  * F4 候选极简化（对齐安卓上线实现）：rtpengine（ICE-lite）按
  * 收包源地址回包（prflx 学习），host 候选直发 check 即可达，srflx 在
@@ -327,6 +335,10 @@ NSString * const SipWebrtcEngineDidRegisterOKNotification
 - (void)sendInviteWithLocalSdp:(SipCallSession *)session;
 - (void)sendAnswerWithLocalSdp:(SipCallSession *)session;
 - (void)sendReinviteWithLocalSdp:(SipCallSession *)session;
+/* re-INVITE 附加头组装（会话级 X-Request-ID 沿用 + compat extra 追加） */
++ (nullable NSString *)buildReinviteHeaders:(SipCallSession *)session;
+/* 头串中是否已含指定头名（按行取 ':' 前段，大小写不敏感） */
++ (BOOL)headerString:(NSString *)headers containsHeader:(NSString *)name;
 - (void)terminateSession:(SipCallSession *)session view:(NSString *)view;
 - (void)onSessionTerminated:(SipCallSession *)session;
 - (void)applyTrackEnabled:(SipCallSession *)session;
@@ -938,6 +950,15 @@ static void ys_fill_field(char *dst, size_t size, NSString *value)
     [self runOnMain:^{
         ys_set_register_headers(headers.length > 0 ? headers.UTF8String : NULL);
         [self engineLog:@"REGISTER headers %@",
+            headers.length > 0 ? @"set (sticky until clear)" : @"cleared"];
+    }];
+}
+
+- (void)setReinviteExtraHeaders:(NSString *)headers
+{
+    [self runOnMain:^{
+        sReinviteExtraHeaders = headers.length > 0 ? [headers copy] : nil;
+        [self engineLog:@"re-INVITE extra headers %@",
             headers.length > 0 ? @"set (sticky until clear)" : @"cleared"];
     }];
 }
@@ -3069,14 +3090,59 @@ static void ys_fill_field(char *dst, size_t size, NSString *value)
 
     /* 候选过滤（同 INVITE / answer，见 filterSdpCandidates） */
     NSString *reinviteSdp = [self filterSdpCandidates:desc.sdp];
+    NSString *reinviteHeaders = [[self class] buildReinviteHeaders:session];
     if (ys_reinvite_with_sdp((pjsua_call_id)session.callId,
-                             reinviteSdp.UTF8String ?: "") == 0) {
+                             reinviteSdp.UTF8String ?: "",
+                             reinviteHeaders.UTF8String ?: NULL) == 0) {
         session.awaitingAnswer = YES;
-        [self ysLog:@"re-INVITE sent (call %ld, offer %lu bytes)",
-            (long)session.callId, (unsigned long)reinviteSdp.length];
+        [self ysLog:@"re-INVITE sent (call %ld, offer %lu bytes, headers %@)",
+            (long)session.callId, (unsigned long)reinviteSdp.length,
+            reinviteHeaders.length > 0 ? reinviteHeaders : @"none"];
     } else {
         [self ysLog:@"re-INVITE FAILED"];
     }
+}
+
+/*
+ * re-INVITE 附加头组装：会话级 X-Request-ID（沿用本通对话，对齐旧栈
+ * ——hold/resume 与换网 re-INVITE 均携带）+ compat 桥接的 extra 头
+ * （换网 X-NetworkChanged 等）。
+ */
++ (nullable NSString *)buildReinviteHeaders:(SipCallSession *)session
+{
+    NSString *extra = sReinviteExtraHeaders;
+    NSMutableString *sb = [NSMutableString string];
+    /* App 已经头通道注入 X-REQUEST-ID 时不再自动拼会话级（防双头——
+     * SIP 头名大小写不敏感但报文出现两个同名头不合法度）；呼入通话
+     * App 未注入时自动沿用本通对话 requestId */
+    BOOL extraHasRequestId = extra.length > 0
+        && [self headerString:extra containsHeader:@"X-REQUEST-ID"];
+    if (!extraHasRequestId && session.requestId.length > 0) {
+        [sb appendFormat:@"X-REQUEST-ID: %@\n", session.requestId];
+    }
+    if (extra.length > 0) {
+        [sb appendString:extra];
+        if (![extra hasSuffix:@"\n"]) {
+            [sb appendString:@"\n"];
+        }
+    }
+    return sb.length > 0 ? [sb copy] : nil;
+}
+
++ (BOOL)headerString:(NSString *)headers containsHeader:(NSString *)name
+{
+    for (NSString *line in [headers componentsSeparatedByString:@"\n"]) {
+        NSRange colon = [line rangeOfString:@":"];
+        if (colon.location != NSNotFound && colon.location > 0) {
+            NSString *found = [[line substringToIndex:colon.location]
+                stringByTrimmingCharactersInSet:
+                    [NSCharacterSet whitespaceCharacterSet]];
+            if ([found caseInsensitiveCompare:name] == NSOrderedSame) {
+                return YES;
+            }
+        }
+    }
+    return NO;
 }
 
 #pragma mark - hold/resume（安卓 holdInternal:924-959）

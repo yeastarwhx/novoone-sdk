@@ -230,6 +230,11 @@ final class CompatAdapter: NSObject, SipEngineCallback {
     private var registrationState: RegistratorStateType = .None
     /// REGISTER 自定义头表(粘性,对齐 Android mRegisterHeaders)
     private var registerHeaders: [String: String] = [:]
+    /// re-INVITE 附加头表(粘性直到 exclude,对齐 Android mInviteHeaders):
+    /// App 经 includeNonStandardSipHeader(INVITE) 注入(如换网
+    /// X-NetworkChanged),随 hold/resume/换网的 re-INVITE 携带;
+    /// 呼出新通话的头走 callMake 的 requestId 专用通道(一次性)
+    private var inviteHeaders: [String: String] = [:]
     /// 挂起撤除的头(头名→兜底定时器):App 的 3s 盲定时 exclude 落在注册
     /// 在途/重试窗口时,撤除延迟到注册 200;45s 兜底防头永久粘性
     private var pendingHeaderWithdrawals: [String: DispatchWorkItem] = [:]
@@ -424,7 +429,7 @@ final class CompatAdapter: NSObject, SipEngineCallback {
         }
     }
 
-    // MARK: REGISTER 头表(REGISTER 即时下发粘性,INVITE 仅记录——对齐 Android)
+    // MARK: 自定义头表(REGISTER/INVITE 即时下发引擎,粘性直到 exclude——对齐 Android)
 
     func includeHeader(method: String, name: String, value: String?) {
         guard !name.isEmpty else { return }
@@ -434,8 +439,14 @@ final class CompatAdapter: NSObject, SipEngineCallback {
             // 新一轮唤醒头)
             pendingHeaderWithdrawals.removeValue(forKey: name)?.cancel()
             applyRegisterHeaders()
+        } else if method.caseInsensitiveCompare("INVITE") == .orderedSame {
+            // re-INVITE 附加头(粘性直到 exclude):随 hold/resume/换网的
+            // re-INVITE 携带——对齐旧栈(换网场景 App 注入
+            // X-NetworkChanged,re-INVITE 自动带上)
+            inviteHeaders[name] = value ?? ""
+            applyInviteHeaders()
         } else {
-            NSLog("[compat] %@ custom header recorded: %@=%@ (INVITE 头走呼叫路径参数)",
+            NSLog("[compat] %@ custom header ignored (only REGISTER/INVITE bridged): %@=%@",
                   method, name, value ?? "")
         }
     }
@@ -454,15 +465,28 @@ final class CompatAdapter: NSObject, SipEngineCallback {
             // 不下发(弱网时序缺口,对齐 dev-webrtc abdf59e4 注册 200 事件
             // 驱动语义);45s 兜底防头永久粘性
             scheduleHeaderWithdrawal(name)
+        } else if method.caseInsensitiveCompare("INVITE") == .orderedSame {
+            inviteHeaders.removeValue(forKey: name)
+            applyInviteHeaders()
         }
     }
 
-    private func applyRegisterHeaders() {
-        let joined = registerHeaders
+    /// 头表 → "Name: Value" 多行串(按头名排序,\r\n 分隔;空表 = nil)
+    private func joinedHeaderString(_ table: [String: String]) -> String? {
+        let joined = table
             .sorted { $0.key < $1.key }
             .map { "\($0.key): \($0.value)" }
             .joined(separator: "\r\n")
-        engine.setRegisterHeaders(joined.isEmpty ? nil : joined)
+        return joined.isEmpty ? nil : joined
+    }
+
+    private func applyRegisterHeaders() {
+        engine.setRegisterHeaders(joinedHeaderString(registerHeaders))
+    }
+
+    /// INVITE 附加头 → 引擎 re-INVITE 通道("Name: Value" 多行串)
+    private func applyInviteHeaders() {
+        engine.setReinviteExtraHeaders(joinedHeaderString(inviteHeaders))
     }
 
     private func scheduleHeaderWithdrawal(_ name: String) {

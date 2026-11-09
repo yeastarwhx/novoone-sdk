@@ -126,6 +126,15 @@ typedef NS_ENUM(NSInteger, SipCallPjsuaState) {
 - (void)setRegisterHeaders:(nullable NSString *)headers;
 
 /*
+ * re-INVITE 附加自定义头（"Name: Value\n" 多行，粘性直到清除）。compat
+ * 桥接通道：App 经 includeNonStandardSipHeader(INVITE) 注入（如换网场景
+ * 的 X-NetworkChanged）。re-INVITE 组包时会话级 X-Request-ID 之外一并
+ * 携带——对齐旧栈行为：所有 in-dialog re-INVITE 沿用本通对话 requestId，
+ * 换网时附加换网标志头。
+ */
+- (void)setReinviteExtraHeaders:(nullable NSString *)headers;
+
+/*
  * 注入 User-Agent 设备段（推送路由关联）：须在 engineStart 前调用，
  * 注入后 buildUserAgent 优先采用、不再取 IDFV。取值必须与 PushReporter
  * 上报的 userAgentId 同源（App 侧传 DeviceInfoBridgeSwift.getDeviceId()）：
