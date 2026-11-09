@@ -12,14 +12,20 @@ import org.webrtc.DataChannel;
 import org.webrtc.IceCandidate;
 import org.webrtc.MediaConstraints;
 import org.webrtc.MediaStream;
+import org.webrtc.MediaStreamTrack;
 import org.webrtc.PeerConnection;
 import org.webrtc.PeerConnectionFactory;
+import org.webrtc.RtpCapabilities;
+import org.webrtc.RtcError;
 import org.webrtc.SessionDescription;
 import org.webrtc.SdpObserver;
 import org.webrtc.audio.JavaAudioDeviceModule;
 
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * 呼叫引擎 + PeerConnection 生命周期（多通话会话化改造版）。
@@ -205,6 +211,14 @@ public class SipWebrtcEngine {
             Collections.singletonList(PeerConnection.IceServer
                     .builder("stun:stun.cloudflare.com:3478")
                     .createIceServer());
+
+    /* 服务器下发编解码配置（codecOrder/codecOrder3G，ID 串如
+     * "8,103"/"18"）。存储不解析——选表时按当前网络取表解析，配置
+     * 运行时变更（MQTT TENANT_CODEC_CONFIG_CHANGED →
+     * updateCodecConfig）下次 offer/answer 自然生效。主线程读写
+     * （引擎线程纪律；updateCodecConfig 入口归一 null 为空串） */
+    private String codecOrderWifi = "";
+    private String codecOrderCellular = "";
 
     private SipWebrtcEngine() {
     }
@@ -583,6 +597,8 @@ public class SipWebrtcEngine {
             terminateSession(s, CallSession.STATE_ERROR);
             return;
         }
+        /* 编解码偏好（服务器配置按网络类型选表）：createOffer 前设置 */
+        applyCodecPreferencesForOffer(s);
         s.pc.createOffer(new SdpObserverBase(s) {
             @Override
             protected void onCreated(SessionDescription sdp) {
@@ -1630,6 +1646,9 @@ public class SipWebrtcEngine {
                 if (s.pc == null) {
                     return;
                 }
+                /* 编解码偏好（offer∩配置∩支持，空交集不设偏好自然失败）：
+                 * SRD 之后 createAnswer 前设置 */
+                applyCodecPreferencesForAnswer(s, offerSdp);
                 s.pc.createAnswer(new SdpObserverBase(s) {
                     @Override
                     protected void onCreated(SessionDescription answer) {
@@ -1797,6 +1816,9 @@ public class SipWebrtcEngine {
         if (s.pc == null) {
             return;
         }
+        /* 编解码偏好：re-INVITE offer 与呼出同链刷新（含 hold/resume 与
+         * 网络恢复路径） */
+        applyCodecPreferencesForOffer(s);
         s.pc.createOffer(new SdpObserverBase(s) {
             @Override
             protected void onCreated(SessionDescription sdp) {
@@ -1858,6 +1880,316 @@ public class SipWebrtcEngine {
                     + filteredReinvite.length() + " bytes)");
         } else {
             log("[ys] re-INVITE FAILED");
+        }
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* 编解码配置（服务器下发 codecOrder/codecOrder3G，逐条对齐 iOS        */
+    /* SipWebrtcEngine.mm）                                                */
+    /* ------------------------------------------------------------------ */
+
+    /* 服务器编码体系（Acrobits 惯例数字 ID）：0=PCMU 8=PCMA 9=G722
+     * 18=G729 103=OPUS。客户端一期支持 PCMU/PCMA/G722/OPUS 四种，
+     * G729(18) 二期支持——解析配置时静默过滤（codecMimeForId 返回
+     * null 即忽略）；GSM=3/ILBC=102 等其余 ID 一并忽略 */
+
+    /* 默认 codec order（服务器侧惯例全集；解析只认 4 种支持编码，
+     * 18/102/3 静默过滤 → 等效全 4 支持编码） */
+    private static final String CODEC_DEFAULT_ORDER = "103,9,0,8,18,102,3";
+
+    /* 主叫空交集兜底（该网络段只配了 G729 等不支持编码）：带全部 4 个
+     * 支持编码，顺序 OPUS,G722,PCMU,PCMA，不失败 */
+    private static final int[] CODEC_FALLBACK_ORDER = {103, 9, 0, 8};
+
+    /* 配置 ID → 引擎 audio capability 的 mimeType（匹配用忽略大小写比较，
+     * WebRTC 的 G711 表示为 audio/PCMU / audio/PCMA）；18 及其它未识别
+     * ID 返回 null——解析时静默过滤（对齐 iOS SipCodecMimeForId） */
+    private static String codecMimeForId(int codecId) {
+        switch (codecId) {
+            case 103: return "audio/opus";
+            case 9:   return "audio/G722";
+            case 0:   return "audio/PCMU";
+            case 8:   return "audio/PCMA";
+            default:  return null;
+        }
+    }
+
+    /* ID → 编码短名（日志与 answer 交集判定用，大写；未识别 ID 原样
+     * 数字串——parseCodecOrder 已滤掉未识别 ID，此为防御兜底） */
+    private static String codecNameForId(int codecId) {
+        String mime = codecMimeForId(codecId);
+        if (mime == null) {
+            return String.valueOf(codecId);
+        }
+        return mime.substring(mime.indexOf('/') + 1).toUpperCase();
+    }
+
+    /* ID 列表 → 逗号分隔短名（日志用） */
+    private static String codecNamesOfIds(int[] codecIds) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < codecIds.length; i++) {
+            if (i > 0) {
+                sb.append(',');
+            }
+            sb.append(codecNameForId(codecIds[i]));
+        }
+        return sb.toString();
+    }
+
+    /* 字符串集合 → 逗号分隔（answer 空交集日志的 offer 侧打印用） */
+    private static String joinNames(Set<String> names) {
+        StringBuilder sb = new StringBuilder();
+        for (String n : names) {
+            if (sb.length() > 0) {
+                sb.append(',');
+            }
+            sb.append(n);
+        }
+        return sb.toString();
+    }
+
+    /* 配置 ID 串 → 支持编码 ID 列表（顺序=配置顺序；18/102/3 等静默
+     * 过滤、重复去重；坏 token 跳过——NumberFormatException 分支：非纯
+     * 数字 token 忽略，防 parseInt 失败值 0 误映射 PCMU。对齐 iOS
+     * SipParseCodecOrder） */
+    private static int[] parseCodecOrder(String order) {
+        List<Integer> ids = new ArrayList<>();
+        if (order == null || order.isEmpty()) {
+            return new int[0];
+        }
+        for (String part : order.split(",")) {
+            String trimmed = part.trim();
+            if (trimmed.isEmpty()) {
+                continue;
+            }
+            int value;
+            try {
+                value = Integer.parseInt(trimmed);
+            } catch (NumberFormatException e) {
+                continue;
+            }
+            if (codecMimeForId(value) != null && !ids.contains(Integer.valueOf(value))) {
+                ids.add(Integer.valueOf(value));
+            }
+        }
+        int[] result = new int[ids.size()];
+        for (int i = 0; i < ids.size(); i++) {
+            result[i] = ids.get(i).intValue();
+        }
+        return result;
+    }
+
+    /* offer SDP 音频 m 行的 rtpmap 编码名集合（大写；行式
+     * a=rtpmap:<pt> <name>/<clock>[/<channels>]，m= 段切换跟踪。
+     * 对齐 iOS SipAudioCodecNamesFromSdp） */
+    private static Set<String> audioCodecNamesFromSdp(String sdp) {
+        Set<String> names = new HashSet<>();
+        if (sdp == null || sdp.isEmpty()) {
+            return names;
+        }
+        boolean inAudio = false;
+        for (String line : sdp.split("\n")) {
+            String t = line.trim();
+            if (t.startsWith("m=")) {
+                inAudio = t.startsWith("m=audio");
+                continue;
+            }
+            if (!inAudio || !t.startsWith("a=rtpmap:")) {
+                continue;
+            }
+            String rest = t.substring("a=rtpmap:".length());
+            int sp = rest.indexOf(' ');
+            if (sp < 0 || sp + 1 >= rest.length()) {
+                continue;
+            }
+            String enc = rest.substring(sp + 1);
+            int slash = enc.indexOf('/');
+            String name = (slash >= 0 ? enc.substring(0, slash) : enc).trim();
+            if (!name.isEmpty()) {
+                names.add(name.toUpperCase());
+            }
+        }
+        return names;
+    }
+
+    /**
+     * 服务器下发 codec 配置更新（bridge 消费链：saveAccount / doRegister
+     * / updateAll → 此处）。ID 串原样存储不解析——选表时按当前网络取表
+     * 解析，配置运行时变更（MQTT 通知）下次 offer/answer 自然生效。
+     * 引擎未启动时调用无害（仅写字段打日志，不触 pjsua）；null 按空串
+     * 处理（选表时回退默认 order）。
+     */
+    public void updateCodecConfig(final String wifi, final String cellular) {
+        runOnMain(new Runnable() {
+            @Override
+            public void run() {
+                codecOrderWifi = wifi != null ? wifi : "";
+                codecOrderCellular = cellular != null ? cellular : "";
+                log("[webrtc] codec config updated: wifi="
+                        + (codecOrderWifi.length() > 0 ? codecOrderWifi : "(default)")
+                        + ", cellular="
+                        + (codecOrderCellular.length() > 0
+                            ? codecOrderCellular : "(default)"));
+            }
+        });
+    }
+
+    /* 当前网络类型（编解码配置选表："cellular"/"wifi"）。监视器未建
+     * （引擎未启动）时回退 "wifi"（对齐 iOS：仅蜂窝走 codecOrder3G，
+     * 其余一律 wifi 表） */
+    private String currentNetworkType() {
+        NetworkMonitor nm = networkMonitor;
+        return nm != null ? nm.currentNetworkType() : "wifi";
+    }
+
+    /* 当前网络类型下的配置 ID 串（蜂窝→codecOrder3G 表；wifi/未知→
+     * codecOrder 表；未下发/空串回退默认 order） */
+    private String effectiveCodecOrder() {
+        String order = "cellular".equals(currentNetworkType())
+                ? codecOrderCellular : codecOrderWifi;
+        if (order == null || order.length() == 0) {
+            return CODEC_DEFAULT_ORDER;
+        }
+        return order;
+    }
+
+    /**
+     * 主叫 offer 编码偏好（createOffer 前，含 hold/resume 与网络恢复的
+     * re-INVITE 路径）：「配置 ∩ 支持」非空 → SDP 只含交集、顺序=配置
+     * 顺序；交集为空（该网络段只配了 G729 等不支持编码）→ 带全部 4 个
+     * 支持编码兜底（OPUS,G722,PCMU,PCMA），不失败。每次 offer 前刷新。
+     */
+    private void applyCodecPreferencesForOffer(CallSession s) {
+        if (s.pc == null) {
+            return;
+        }
+        String network = currentNetworkType();
+        int[] ids = parseCodecOrder(effectiveCodecOrder());
+        if (ids.length == 0) {
+            ids = CODEC_FALLBACK_ORDER.clone();
+            log("[webrtc] codec 配置无可支持编码（纯 G729 段）-> offer 兜底全部 4 编码 "
+                    + codecNamesOfIds(ids) + " (network=" + network + ")");
+        }
+        applyCodecPreferences(s.pc, ids, "offer", network);
+    }
+
+    /**
+     * 被叫 answer 编码偏好（SRD 之后 createAnswer 前）：offer∩配置∩支持
+     * 非空 → 设偏好（交集、顺序=配置顺序）；为空（如服务器 offer 只带
+     * G729，或配置与 offer 无公共支持编码）→ 不设偏好不做兜底，协商按
+     * 现有路径自然失败（415，用户确认语义——被叫不迁就，双端一致）。
+     */
+    private void applyCodecPreferencesForAnswer(CallSession s, String offerSdp) {
+        if (s.pc == null) {
+            return;
+        }
+        String network = currentNetworkType();
+        int[] configIds = parseCodecOrder(effectiveCodecOrder());
+        Set<String> offerNames = audioCodecNamesFromSdp(offerSdp);
+        List<Integer> inter = new ArrayList<>();
+        for (int id : configIds) {
+            if (offerNames.contains(codecNameForId(id))) {
+                inter.add(Integer.valueOf(id));
+            }
+        }
+        if (inter.isEmpty()) {
+            log("[webrtc] answer 编码交集为空（offer=" + joinNames(offerNames)
+                    + ", 配置=" + codecNamesOfIds(configIds)
+                    + "）-> 不设偏好，协商自然失败 (call " + s.callId
+                    + ", network=" + network + ")");
+            return;
+        }
+        int[] ids = new int[inter.size()];
+        for (int i = 0; i < inter.size(); i++) {
+            ids[i] = inter.get(i).intValue();
+        }
+        applyCodecPreferences(s.pc, ids, "answer", network);
+    }
+
+    /**
+     * 按目标 ID 顺序从引擎全量 audio capability 现取实例设偏好（capability
+     * 必须取自 factory——native 对 fmtp 参数严格匹配（opus 自带
+     * minptime=10/useinbandfec=1），手工构造空参数会被 setCodecPreferences
+     * 以 InvalidModification 拒绝，与 iOS 同因同解）。顺序即优先级。
+     */
+    private void applyCodecPreferences(PeerConnection pc, int[] codecIds,
+                                       String phase, String network) {
+        if (factory == null || codecIds.length == 0) {
+            return;
+        }
+        RtpCapabilities capabilities;
+        try {
+            capabilities = factory.getRtpSenderCapabilities(
+                    MediaStreamTrack.MediaType.MEDIA_TYPE_AUDIO);
+        } catch (Throwable t) {
+            log("[webrtc] getRtpSenderCapabilities failed (" + phase + "): " + t);
+            return;
+        }
+        List<RtpCapabilities.CodecCapability> caps =
+                capabilities != null ? capabilities.codecs : null;
+        if (caps == null || caps.isEmpty()) {
+            log("[webrtc] codec capability 缺失 -> 保持引擎默认 (" + phase + ")");
+            return;
+        }
+        List<RtpCapabilities.CodecCapability> preferred = new ArrayList<>();
+        for (int id : codecIds) {
+            String mime = codecMimeForId(id);
+            if (mime == null) {
+                continue;
+            }
+            for (RtpCapabilities.CodecCapability cap : caps) {
+                if (cap.mimeType != null && cap.mimeType.equalsIgnoreCase(mime)
+                        && !preferred.contains(cap)) {
+                    preferred.add(cap);
+                    break;
+                }
+            }
+        }
+        if (preferred.isEmpty()) {
+            log("[webrtc] codec capability 匹配为空 " + codecNamesOfIds(codecIds)
+                    + " -> 保持引擎默认 (" + phase + ")");
+            return;
+        }
+        /* telephone-event 恒随列表尾（RFC 4733 DTMF）：它是事件载荷不是
+         * 音频编码，编码过滤把它排除 = offer/answer 均不含 101，
+         * canInsertDtmf 恒 false、DTMF 永不可用（offer 带
+         * telephone-event 而 answer 丢失，按键全落 unavailable）。offer
+         * 不带 telephone-event 时协商自然不含，不受影响；capability 仍
+         * 取自 factory 实例（fmtp 自带，与编码同因） */
+        for (RtpCapabilities.CodecCapability cap : caps) {
+            if (cap.mimeType != null
+                    && cap.mimeType.equalsIgnoreCase("audio/telephone-event")) {
+                preferred.add(cap);
+                break;
+            }
+        }
+        boolean ok = true;
+        try {
+            for (org.webrtc.RtpTransceiver t : pc.getTransceivers()) {
+                if (t.getMediaType() != MediaStreamTrack.MediaType.MEDIA_TYPE_AUDIO) {
+                    continue;
+                }
+                try {
+                    RtcError err = t.setCodecPreferences(preferred);
+                    if (err == null || !err.isSuccess()) {
+                        ok = false;
+                        log("[webrtc] setCodecPreferences failed (" + phase + "): "
+                                + (err != null && err.error() != null
+                                    ? err.error().getMessage() : "unknown error"));
+                    }
+                } catch (Throwable te) {
+                    ok = false;
+                    log("[webrtc] setCodecPreferences exception (" + phase
+                            + "): " + te);
+                }
+            }
+        } catch (Throwable t) {
+            ok = false;
+            log("[webrtc] setCodecPreferences exception (" + phase + "): " + t);
+        }
+        if (ok) {
+            log("[webrtc] " + phase + " codecs=" + codecNamesOfIds(codecIds)
+                    + " (network=" + network + ")");
         }
     }
 

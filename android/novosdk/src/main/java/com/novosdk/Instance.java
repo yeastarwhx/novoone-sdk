@@ -465,12 +465,27 @@ public final class Instance {
                 xml.setChildValue("pushTokenReporterCustomHeaders",
                         snap.pushTokenReporterCustomHeaders);
             }
+            /* 服务器编解码配置节点回写（防丢）：modifyAccount 的 clone 链
+             * 不回写 = 后续任何参数变更把 codec 配置抹掉（iOS
+             * CompatAdapter.swift:367 同防）。空值不写树——与上方注册
+             * 字段同形态 */
+            if (snap.codecOrder != null && !snap.codecOrder.isEmpty()) {
+                xml.setChildValue("codecOrder", snap.codecOrder);
+            }
+            if (snap.codecOrder3G != null && !snap.codecOrder3G.isEmpty()) {
+                xml.setChildValue("codecOrder3G", snap.codecOrder3G);
+            }
             return new AccountXml(xml,
                     com.novosdk.mergeable.MergeableNodeAttributes.gui());
         }
 
         /** 刷新注册（重发 REGISTER；配置变更后的 apply 语义） */
         public static void updateAll() {
+            /* MQTT codec 配置变更走 updateAll（App 经 SIP_CONFIG_SYNC 三链
+             * merge 进账户 XML 后 updateAll，accId 在册时只 reregister 不
+             * 重走 saveAccount）——先推引擎，下次 offer/answer 按新配置
+             * 选表 */
+            bridge().pushCodecConfig();
             if (bridge().engine().getAccId() >= 0) {
                 bridge().engine().accountReregister();
             } else {

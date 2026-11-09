@@ -151,21 +151,13 @@ class NetworkMonitor {
             return null;
         }
         Network active = cm.getActiveNetwork();
-        if (active == null) {
+        String type = transportTypeOf(active);
+        if (type == null) {
             return null;
         }
-        NetworkCapabilities caps = cm.getNetworkCapabilities(active);
         LinkProperties lp = cm.getLinkProperties(active);
-        if (caps == null || lp == null) {
+        if (lp == null) {
             return null;
-        }
-        String type;
-        if (caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) {
-            type = TYPE_WIFI;
-        } else if (caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)) {
-            type = TYPE_CELL;
-        } else {
-            type = TYPE_OTHER; /* VPN 等：类型变化同样触发（恢复幂等） */
         }
         String ip = null;
         for (LinkAddress addr : lp.getLinkAddresses()) {
@@ -175,6 +167,52 @@ class NetworkMonitor {
             }
         }
         return type + "|" + (ip != null ? ip : "no-ip");
+    }
+
+    /**
+     * 当前网络类型（编解码配置选表用，引擎 SipWebrtcEngine 调用）：
+     * "cellular" / "wifi"。对齐 iOS currentNetworkName 选表语义：仅蜂窝
+     * 走 codecOrder3G 表，wifi/other（VPN）/无网/信息缺失一律 wifi 表。
+     * 直接查询 ConnectivityManager（不依赖 start 的 callback 注册）。
+     */
+    synchronized String currentNetworkType() {
+        if (cm == null) {
+            return "wifi";
+        }
+        Network active = null;
+        try {
+            active = cm.getActiveNetwork();
+        } catch (Exception e) {
+            /* 与 transportTypeOf 同款防御：极少数 ROM/宿主未声明
+             * ACCESS_NETWORK_STATE 时查询抛 SecurityException——按信息
+             * 缺失处理，回退 wifi 表（拨打/接听主线程路径不冒泡） */
+        }
+        return TYPE_CELL.equals(transportTypeOf(active))
+                ? "cellular" : "wifi";
+    }
+
+    /** active 网络的 transport 类型（TYPE_WIFI/TYPE_CELL/TYPE_OTHER；
+     *  active 为 null/信息缺失/查询异常返回 null。调用方保证 cm 非空） */
+    private String transportTypeOf(Network active) {
+        if (active == null) {
+            return null;
+        }
+        try {
+            NetworkCapabilities caps = cm.getNetworkCapabilities(active);
+            if (caps == null) {
+                return null;
+            }
+            if (caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) {
+                return TYPE_WIFI;
+            }
+            if (caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)) {
+                return TYPE_CELL;
+            }
+            return TYPE_OTHER; /* VPN 等：类型变化同样触发（恢复幂等） */
+        } catch (Exception e) {
+            /* 极少数 ROM 限制：查询异常按信息缺失处理（选表回退 wifi） */
+            return null;
+        }
     }
 
     /** 从基线 key 与新 key 推导触发原因（三分支的后两支） */

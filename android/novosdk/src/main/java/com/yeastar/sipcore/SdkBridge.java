@@ -72,6 +72,8 @@ public final class SdkBridge implements EngineCallback {
     private static final String KEY_DISPLAYNAME = "acc_displayname";
     private static final String KEY_EXPIRES = "acc_expires";
     private static final String KEY_TRANSPORT = "acc_transport";
+    private static final String KEY_CODEC_ORDER = "acc_codec_order";
+    private static final String KEY_CODEC_ORDER_3G = "acc_codec_order_3g";
     private static final String KEY_PUSH_REPORT_URL = "acc_push_report_url";
     private static final String KEY_PUSH_REPORT_HEADERS = "acc_push_report_headers";
     private static final String KEY_ACCOUNT_ID = "acc_account_id";
@@ -607,6 +609,12 @@ public final class SdkBridge implements EngineCallback {
          * 账户时写入；上报由 SDK 内置 PushTokenReporter 完成） */
         public String pushTokenReporterUrl;
         public String pushTokenReporterCustomHeaders;
+        /* 服务器下发编解码配置（AccountXml codecOrder/codecOrder3G 节点，
+         * ID 串如 "8,103"/"18"；App 登录 codecConfig + MQTT
+         * TENANT_CODEC_CONFIG_CHANGED merge 进账户 XML）。原样存储不解析
+         * ——引擎侧按网络类型选表时解析，null/空回退默认 order */
+        public String codecOrder;
+        public String codecOrder3G;
     }
 
     /** AccountXml → 注册（含引擎启动 / transport 重建 / 持久化） */
@@ -633,8 +641,13 @@ public final class SdkBridge implements EngineCallback {
         snap.pushTokenReporterUrl = emptyToNull(accountXml.getString("pushTokenReporterUrl"));
         snap.pushTokenReporterCustomHeaders =
                 emptyToNull(accountXml.getString("pushTokenReporterCustomHeaders"));
+        /* 编解码配置（ID 串原样存储——getString 缺失节点返回 null，由
+         * 引擎侧回退默认 order） */
+        snap.codecOrder = accountXml.getString("codecOrder");
+        snap.codecOrder3G = accountXml.getString("codecOrder3G");
         mAccount = snap;
         persistAccountSnapshot();
+        pushCodecConfig();
         return registerCurrentAccount();
     }
 
@@ -642,22 +655,31 @@ public final class SdkBridge implements EngineCallback {
         return v == null || v.isEmpty() ? null : v;
     }
 
-    /** transport 归一：tls→tcp 降级（引擎交付形态仅 udp/tcp），未知回退 tcp */
+    /**
+     * transport 归一：udp/tcp/tls 三态，未知回退 tcp。
+     * tls→tcp 降级为历史设计（引擎交付形态仅 udp/tcp 时期）——引擎
+     * TRANSPORT_TLS 与 so 的 OpenSSL 符号均已具备（871 个 TLS/SSL 符号
+     * 实证），whxtest TLS 服务器（5061）接入后放开（2026-11-06）
+     */
     private static String normalizeTransport(String raw) {
         if (raw == null || raw.trim().isEmpty()) {
             return "tcp";
         }
         String t = raw.trim().toLowerCase();
-        if ("udp".equals(t)) {
-            return "udp";
+        if ("udp".equals(t) || "tls".equals(t)) {
+            return t;
         }
-        /* tls 降级 tcp（与 :sdk 模块 AccountDelegate.normalizeTransport 对齐） */
         return "tcp";
     }
 
     private int transportToEngine(String transport) {
-        return "udp".equals(transport)
-                ? SipWebrtcEngine.TRANSPORT_UDP : SipWebrtcEngine.TRANSPORT_TCP;
+        if ("udp".equals(transport)) {
+            return SipWebrtcEngine.TRANSPORT_UDP;
+        }
+        if ("tls".equals(transport)) {
+            return SipWebrtcEngine.TRANSPORT_TLS;
+        }
+        return SipWebrtcEngine.TRANSPORT_TCP;
     }
 
     /* 注册防重入标记（冷启动恢复 + App createAccount/refreshAccounts 并发
@@ -702,6 +724,9 @@ public final class SdkBridge implements EngineCallback {
     }
 
     private int doRegister(AccountSnapshot snap) {
+        /* codec 配置先行推引擎：冷启动 restore → registerCurrentAccount 链
+         * 无 saveAccount，此处补推（引擎未启动时仅写字段，无害） */
+        pushCodecConfig();
         int target = transportToEngine(snap.transport);
         if (!mEngine.isStarted()) {
             Context ctx = AndroidUtil.getApplicationContext();
@@ -757,6 +782,25 @@ public final class SdkBridge implements EngineCallback {
         }, ENGINE_RESTART_DELAY_MS);
     }
 
+    /**
+     * 编解码配置推引擎（snapshot codecOrder/codecOrder3G →
+     * engine.updateCodecConfig，引擎侧按网络类型选表生效于下次
+     * offer/answer）。
+     *
+     * 调用面（public：跨包——com.novosdk Instance.Registration.updateAll
+     * 在 MQTT codec 配置变更路径补推，该路径 accId 在册时只 reregister
+     * 不重走 saveAccount）：saveAccount 解析后 / doRegister 入口（覆盖
+     * 冷启动 restore → registerCurrentAccount 链）/ updateAll。
+     * 引擎未启动时调用无害（updateCodecConfig 仅写字段打日志，不触
+     * pjsua）；快照缺失推 null（引擎侧归一空串回退默认 order）。
+     */
+    public void pushCodecConfig() {
+        AccountSnapshot snap = mAccount;
+        mEngine.updateCodecConfig(
+                snap != null ? snap.codecOrder : null,
+                snap != null ? snap.codecOrder3G : null);
+    }
+
     /* ---------------- 持久化（冷启动自恢复） ---------------- */
 
     private SharedPreferences prefs(Context context) {
@@ -786,6 +830,8 @@ public final class SdkBridge implements EngineCallback {
                     .putString(KEY_DISPLAYNAME, s.displayName)
                     .putInt(KEY_EXPIRES, s.expires)
                     .putString(KEY_TRANSPORT, s.transport)
+                    .putString(KEY_CODEC_ORDER, s.codecOrder)
+                    .putString(KEY_CODEC_ORDER_3G, s.codecOrder3G)
                     .putString(KEY_PUSH_REPORT_URL, s.pushTokenReporterUrl)
                     .putString(KEY_PUSH_REPORT_HEADERS, s.pushTokenReporterCustomHeaders)
                     .apply();
@@ -810,6 +856,8 @@ public final class SdkBridge implements EngineCallback {
             snap.displayName = sp.getString(KEY_DISPLAYNAME, null);
             snap.expires = sp.getInt(KEY_EXPIRES, 0);
             snap.transport = sp.getString(KEY_TRANSPORT, "tcp");
+            snap.codecOrder = sp.getString(KEY_CODEC_ORDER, null);
+            snap.codecOrder3G = sp.getString(KEY_CODEC_ORDER_3G, null);
             snap.pushTokenReporterUrl = sp.getString(KEY_PUSH_REPORT_URL, null);
             snap.pushTokenReporterCustomHeaders = sp.getString(KEY_PUSH_REPORT_HEADERS, null);
             if (snap.username != null && !snap.username.isEmpty()
