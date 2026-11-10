@@ -20,19 +20,41 @@ import com.novosdk.telecom.ConnectionService;
  */
 public final class ConnectionCompat {
 
+    /** 分版档位（pickLevel 单一来源；低版本设备实例化高层级类会命中高
+     * API 方法抛 NoSuchMethodError，分档判断全工程仅此处一份——
+     * NovoConnectionFactory 门面共用，未来加档只改这里） */
+    static final int LEVEL_API23 = 23;
+    static final int LEVEL_API26 = 26;
+    static final int LEVEL_API34 = 34;
+    static final int LEVEL_API35 = 35;
+
     private ConnectionCompat() {
+    }
+
+    /** 按系统版本返回分版档位（纯函数，sdkInt 参数注入便于单测） */
+    static int pickLevel(int sdkInt) {
+        if (sdkInt >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+            return LEVEL_API35;
+        } else if (sdkInt >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            return LEVEL_API34;
+        } else if (sdkInt >= Build.VERSION_CODES.O) {
+            return LEVEL_API26;
+        } else {
+            return LEVEL_API23;
+        }
     }
 
     /** 按系统版本创建对应层级的 Connection 子类 */
     public static Connection createConnection(CallEvent callEvent, boolean selfManaged) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
-            return new ConnectionImplApi35(callEvent, selfManaged);
-        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            return new ConnectionImplApi34(callEvent, selfManaged);
-        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            return new ConnectionImplApi26(callEvent, selfManaged);
-        } else {
-            return new ConnectionImplApi23(callEvent);
+        switch (pickLevel(Build.VERSION.SDK_INT)) {
+            case LEVEL_API35:
+                return new ConnectionImplApi35(callEvent, selfManaged);
+            case LEVEL_API34:
+                return new ConnectionImplApi34(callEvent, selfManaged);
+            case LEVEL_API26:
+                return new ConnectionImplApi26(callEvent, selfManaged);
+            default:
+                return new ConnectionImplApi23(callEvent);
         }
     }
 

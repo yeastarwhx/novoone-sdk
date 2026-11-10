@@ -27,4 +27,8 @@ dependencies {
     api project(':sip-core')
     // fastjson（App 经 fastjson 序列化 CallEvent；Dict extends JSONObject）
     api 'com.alibaba:fastjson:1.2.83'
+
+    // 本地单测（pickLevel 分档表驱动；Build.VERSION_CODES 常量编译期内联，
+    // 纯 JVM 可测无需 Robolectric）
+    testImplementation 'junit:junit:4.13.2'
 }
