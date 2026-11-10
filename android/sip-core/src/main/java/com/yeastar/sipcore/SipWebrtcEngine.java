@@ -1310,7 +1310,7 @@ public class SipWebrtcEngine {
                         log("[webrtc] SetRemoteDescription: " + error);
                     }
                 }, new SessionDescription(SessionDescription.Type.ANSWER,
-                        sdp != null ? sdp : ""));
+                        telephoneEventFromWire(sdp != null ? sdp : "")));
             }
         });
     }
@@ -1611,7 +1611,8 @@ public class SipWebrtcEngine {
         }
         s.inviteSent = true;
 
-        String filteredSdp = filterIpv6Candidates(desc.description);
+        String filteredSdp = telephoneEventToWire(
+                filterIpv6Candidates(desc.description));
         int newCallId = JniBridge.nativeMakeCall(accId, s.remoteNumber,
                 filteredSdp);
         if (newCallId < 0) {
@@ -1711,7 +1712,8 @@ public class SipWebrtcEngine {
                     terminateSession(s, CallSession.STATE_INCOMING_REJECTED);
                 }
             }
-        }, new SessionDescription(SessionDescription.Type.OFFER, offerSdp));
+        }, new SessionDescription(SessionDescription.Type.OFFER,
+                telephoneEventFromWire(offerSdp)));
     }
 
     /** 零候选保护作用域：呼入初始应答（振铃/早期窗口，200 未发过） */
@@ -1796,7 +1798,8 @@ public class SipWebrtcEngine {
         s.answerPending = false;
         cancelGatherWatchdog(s);
 
-        String filteredAns = filterIpv6Candidates(desc.description);
+        String filteredAns = telephoneEventToWire(
+                filterIpv6Candidates(desc.description));
         if (JniBridge.nativeAnswerCall(s.callId, 200, filteredAns) == 0) {
             log("[ys] answered 200 (call " + s.callId + ", answer "
                     + filteredAns.length()
@@ -1872,7 +1875,8 @@ public class SipWebrtcEngine {
         s.reinvitePending = false;
         cancelGatherWatchdog(s);
 
-        String filteredReinvite = filterIpv6Candidates(desc.description);
+        String filteredReinvite = telephoneEventToWire(
+                filterIpv6Candidates(desc.description));
         if (JniBridge.nativeReinviteCall(s.callId, filteredReinvite,
                 buildReinviteHeaders(s)) == 0) {
             s.awaitingAnswer = true;
@@ -2637,6 +2641,27 @@ public class SipWebrtcEngine {
     /** 过滤 IPv6 候选行（服务器不支持 IPv6，仅保留 IPv4 候选）。
      * 候选格式：a=candidate:<foundation> <component> <transport> <priority>
      * <address> <port> typ ...——address 字段含冒号即为 IPv6 */
+    /* SDP 时钟归一（telephone-event）：WebRTC 原生 capability 时钟 48000，
+     * 服务器 rtpengine/RFC4733 按 8000——两侧各说各的时钟：出线带 48000
+     * 被 rtpengine 剥（200 OK answer 只剩音频编码，DTMF 按键全落
+     * unavailable）；入线 8000 与本端 capability 匹配不上、协商不含。
+     * 归一只发生在网络边界（pjsua 收发字符串），WebRTC 内部全程原生
+     * 48000。iOS CompatFW 同因同解（SipWebrtcEngine.mm 238-253 时钟归一
+     * + 2300 入口 / 2560 出线接线）。 */
+    static String telephoneEventToWire(String sdp) {
+        if (sdp == null) {
+            return null;
+        }
+        return sdp.replace("telephone-event/48000", "telephone-event/8000");
+    }
+
+    static String telephoneEventFromWire(String sdp) {
+        if (sdp == null) {
+            return null;
+        }
+        return sdp.replace("telephone-event/8000", "telephone-event/48000");
+    }
+
     static String filterIpv6Candidates(String sdp) {
         if (sdp == null) {
             return null;
