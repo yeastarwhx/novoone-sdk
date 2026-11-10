@@ -483,6 +483,16 @@ public class SipWebrtcEngine {
         return result != null ? result : -1;
     }
 
+    /** 有无未终态通话会话（PUSH 模式后台注销守卫：通话中保持注册） */
+    public boolean hasActiveCallSession() {
+        for (CallSession s : registry.snapshot()) {
+            if (!s.isTerminal()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /** 注销并删除账号（登出）。@return true 成功 */
     public boolean accountUnregister() {
         if (!started) {

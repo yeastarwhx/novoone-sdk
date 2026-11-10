@@ -191,6 +191,7 @@ public final class SdkBridge implements EngineCallback {
         Context app = context != null ? context.getApplicationContext() : null;
         if (app instanceof android.app.Application) {
             LifecycleTracker.install((android.app.Application) app);
+            installBackgroundLifecycle((android.app.Application) app);
         }
         /* 引擎启动延后到账号注册（transport 由账号参数决定）；
          * 冷恢复：进程重启后账号从持久化快照恢复（对齐 Acrobits 自恢复） */
@@ -200,6 +201,118 @@ public final class SdkBridge implements EngineCallback {
 
     public void setObserver(Listeners observer) {
         mObserver = observer;
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* PUSH 模式后台生命周期（对齐 Acrobits IncomingCallsMode.PUSH 语义）  */
+    /* ------------------------------------------------------------------ */
+
+    /* 26 形态实测对齐（2026-11-10 repro26 日志）：不可见（退后台/熄屏均经
+     * 最后一个 Activity onStop）且无活跃通话 -> 亚秒级 un-REGISTER（服务器
+     * 转推送模式，呼入走 FCM 唤醒链）；回前台 -> 立即重注册。STANDARD
+     * 模式（无 Google Play）保持常驻注册不做后台注销。划掉场景因此免疫：
+     * 划掉前已是注销态，One UI 9.0 的 MARs force-stop 跳过 onTaskRemoved
+     * 也不产生僵尸绑定。 */
+    private final java.util.concurrent.atomic.AtomicInteger mStartedActivities =
+            new java.util.concurrent.atomic.AtomicInteger(0);
+
+    /** 后台注销标记（回前台据此重注册） */
+    private volatile boolean mUnregisteredByBackground = false;
+
+    /** 通话中退后台（结束后仍在后台则补注销） */
+    private volatile boolean mBackgroundedDuringCall = false;
+
+    /** Activity started 计数迁移：0→1 前台 / →0 不可见（熄屏与退后台统一 onStop） */
+    private void installBackgroundLifecycle(android.app.Application app) {
+        app.registerActivityLifecycleCallbacks(
+                new android.app.Application.ActivityLifecycleCallbacks() {
+            @Override
+            public void onActivityStarted(android.app.Activity activity) {
+                if (mStartedActivities.incrementAndGet() == 1) {
+                    onAppForeground();
+                }
+            }
+
+            @Override
+            public void onActivityStopped(android.app.Activity activity) {
+                if (mStartedActivities.decrementAndGet() == 0) {
+                    onAppBackground();
+                }
+            }
+
+            @Override
+            public void onActivityCreated(android.app.Activity a, android.os.Bundle b) { }
+
+            @Override
+            public void onActivityResumed(android.app.Activity a) { }
+
+            @Override
+            public void onActivityPaused(android.app.Activity a) { }
+
+            @Override
+            public void onActivityDestroyed(android.app.Activity a) { }
+
+            @Override
+            public void onActivitySaveInstanceState(android.app.Activity a, android.os.Bundle b) { }
+        });
+    }
+
+    /** 回前台：后台注销过的账号立即重注册（可见即注册） */
+    private void onAppForeground() {
+        mBackgroundedDuringCall = false;
+        if (!mUnregisteredByBackground) {
+            return;
+        }
+        mUnregisteredByBackground = false;
+        android.util.Log.i(TAG, "app foreground -> re-register (push mode)");
+        registerCurrentAccount();
+    }
+
+    /** 不可见：PUSH 模式且已注册且无活跃通话 -> 注销（服务器转推送模式） */
+    private void onAppBackground() {
+        if (!pushBackgroundDeregEnabled()) {
+            return;
+        }
+        if (mRegisteredFingerprint == null || !mEngine.isStarted()) {
+            return;
+        }
+        if (mEngine.hasActiveCallSession()) {
+            /* 通话中退后台保持注册（媒体需要）；结束后仍在后台则补注销
+             * （onCallSessionChanged 终态分支） */
+            mBackgroundedDuringCall = true;
+            android.util.Log.i(TAG,
+                    "app background with active call -> keep registration");
+            return;
+        }
+        unregisterForBackground();
+    }
+
+    /** 后台注销（JNI 直调，TCP write 即走；快照保留供回前台/唤醒重注册） */
+    private void unregisterForBackground() {
+        mUnregisteredByBackground = true;
+        mBackgroundedDuringCall = false;
+        /* 清指纹：回前台 registerCurrentAccount 不被同指纹跳过 */
+        mRegisteredFingerprint = null;
+        boolean ok = mEngine.accountUnregister();
+        android.util.Log.i(TAG, "app background -> un-REGISTER ("
+                + (ok ? "sent" : "failed") + ", push mode)");
+        if (ok) {
+            /* 对齐 Acrobits 无常驻 FGS：注销态无前台服务（划掉走 remove task
+             * 缓存路径，规避 One UI 9.0 对 FGS 进程的 MARs force-stop）；
+             * 回前台注册成功经 onRegisterState(200) 重新就位 */
+            SipForegroundService.stop();
+        }
+    }
+
+    /** incomingCallsMode == PUSH 时启用（实时读取支持运行时切换；异常按禁用） */
+    private boolean pushBackgroundDeregEnabled() {
+        try {
+            return com.novosdk.Instance.preferences != null
+                    && com.novosdk.key.IncomingCallsMode.PUSH.equals(
+                            com.novosdk.Instance.preferences.incomingCallsMode.get());
+        } catch (Throwable t) {
+            return false;
+        }
     }
 
 
@@ -411,6 +524,12 @@ public final class SdkBridge implements EngineCallback {
 
     @Override
     public void onCallSessionChanged(CallSession session) {
+        /* PUSH 模式：通话终态且仍不可见（通话中退后台）-> 补注销 */
+        if (session.isTerminal() && mBackgroundedDuringCall
+                && mStartedActivities.get() == 0 && pushBackgroundDeregEnabled()) {
+            android.util.Log.i(TAG, "call ended in background -> un-REGISTER");
+            unregisterForBackground();
+        }
         CallEvent event = wrapEvent(session);
         /* 去电 Telecom 上报（对方振铃/接听时——postCallEvent 时上报会被
          * 系统立即清理 ConnectionService，延迟到状态观测点对齐来电时序） */
