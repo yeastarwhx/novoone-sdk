@@ -18,8 +18,7 @@ ios/
 ├── NovoSDKCompat/            # SPM 本地包壳(App 经它消费;包名 NovoSDKSwiftPackage)
 │   ├── Binaries/             # NovoSDK_Swift.xcframework + WebRTC.xcframework(构建产物)
 │   └── Package.swift
-├── build-ios-sdk.sh          # 构建链:合静态库 → framework → xcframework → Binaries
-└── switch_engine.py          # App 工程引擎切换(native/acrobits/status/selftest)
+└── build-ios-sdk.sh          # 构建链:合静态库 → framework → xcframework → Binaries
 ```
 
 ## 构建
@@ -41,10 +40,12 @@ cd ios && ./build-ios-sdk.sh                 # 增量(复用 Vendor 静态库)
 
 App 工程 `novoone-app/ios/NovoOneApp.xcodeproj` 的 pbxproj 在 **git 内恒为 Acrobits 形态**;
 native 形态由脚本即时产生、**不提交**(回切即恢复基线)。
+`switch_engine.py` 唯一真源在 App 仓(`ios/switch_engine.py`,随仓入库),SDK 仓不保留副本。
 
 ```bash
+cd <novoone-app>/ios
 python3 switch_engine.py native     # 切自研:saas 包引用(远程->本地 NovoSDKCompat)
-                                    #   + productName 双名字变换 + MARKETING_VERSION 26.9.x -> 126.9.x
+                                    #   + productName 双名字变换 + MARKETING_VERSION 26.x -> 126.x
 python3 switch_engine.py acrobits   # 回 Acrobits:git restore 恢复 HEAD 基线(不做文本逆变换)
 python3 switch_engine.py status     # 当前引擎 / 版本 / pbxproj 状态
 python3 switch_engine.py selftest   # 对 git HEAD 基线跑 native 变换自检(只读)
@@ -57,7 +58,7 @@ python3 switch_engine.py selftest   # 对 git HEAD 基线跑 native 变换自检
 - `acrobits` = `git restore`:xcodebuild 会规范化重写 pbxproj(拆 section/注释与 URL
   改写/加引号),文本逆变换在新格式上必然失配,故直接恢复 HEAD 基线;acrobits 态下
   pbxproj 脏(疑似人工改动)时拒绝自动恢复,提示人工处理
-- 版本语义:**126.9.x = 自研引擎,26.9.x = Acrobits**(Bugly/系统设置可区分双装机)
+- 版本语义:**126.x = 自研引擎,26.x = Acrobits**(Bugly/系统设置可区分双装机)
 
 ## App 侧接入(native 形态)
 

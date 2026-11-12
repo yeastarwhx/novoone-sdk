@@ -6,9 +6,10 @@
 #   --app-ios <dir>  App 工程 ios 目录(默认 Mac 同步副本路径)
 #
 # 同步(对齐 Android build-and-sync.sh 模式):
-# Binaries xcframework + Package.swift + switch_engine.py 同步到 App 仓库
+# Binaries xcframework + Package.swift 同步到 App 仓库
 # ios/NovoSDKCompat 并**入库**——App 团队 clone 即得双引擎切换能力,
 # 无 novoone-sdk 权限依赖。SDK 仓库侧 Binaries 仅为构建缓存(gitignore)。
+# switch_engine.py 唯一真源在 App 仓(随仓入库),SDK 仓不保留副本、不分发。
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -110,20 +111,17 @@ if [[ "$SYNC_APP" == 1 ]]; then
   cp -Rc "$BINARIES/NovoSDK_Swift.xcframework" "$APP_COMPAT/Binaries/"
   cp -Rc "$BINARIES/WebRTC.xcframework" "$APP_COMPAT/Binaries/"
   cp "$HERE/NovoSDKCompat/Package.swift" "$APP_COMPAT/Package.swift"
-  cp "$HERE/switch_engine.py" "$APP_IOS/switch_engine.py"
   rm -f "$APP_COMPAT/Binaries/.gitkeep"   # 产物就位后移除占位
   echo "    synced -> $APP_COMPAT"
-  echo "    App 侧入库(由人执行): git add ios/NovoSDKCompat ios/switch_engine.py"
+  echo "    App 侧入库(由人执行): git add ios/NovoSDKCompat"
 fi
 
 if [[ "$SWITCH_NATIVE" == 1 ]]; then
   echo "==> --switch-native: 切换 App 工程"
-  # 切换优先用 App 侧脚本副本(SDK_COMPAT 自适应 -> App 本地
-  # NovoSDKCompat 引用);未同步过(如 --no-sync-app)回落 SDK 侧副本
-  # (引用 SDK 仓库路径,仅 Mac 本机调试形态)
+  # switch_engine.py 唯一真源在 App 仓(SDK 不再分发副本)
   if [[ -f "$APP_IOS/switch_engine.py" ]]; then
     python3 "$APP_IOS/switch_engine.py" native "$APP_IOS"
   else
-    python3 "$HERE/switch_engine.py" native "$APP_IOS"
+    echo "ERROR: $APP_IOS/switch_engine.py not found (App 仓自带,SDK 不分发)"; exit 1
   fi
 fi
