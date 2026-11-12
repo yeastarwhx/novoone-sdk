@@ -7,8 +7,9 @@
 
 #import "SipCoreLogger.h"
 
-/* 来电振动节奏：每拍一次振动脉冲（近似系统来电节奏；音频循环独立） */
-static NSTimeInterval const kSipRingInterval = 2.0;
+/* 来电振动节奏：每拍一次振动脉冲，周期与铃声音频循环（2s 鸣 + 3s 止）
+ * 对齐，节奏不错拍 */
+static NSTimeInterval const kSipRingInterval = 5.0;
 
 /* 合成参数：电话频段双音（北美标准 440+480Hz），8kHz/16bit 单声道足够 */
 static double const kSipToneSampleRate = 8000.0;

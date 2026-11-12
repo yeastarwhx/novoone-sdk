@@ -5,6 +5,10 @@
 //  Acrobits 兼容层:枚举 + ObjC 导入名全局常量 + toString 静态类。
 //  枚举成员与原始值逐字对齐 Acrobits SoftphoneBridge.h(25.3.37)。
 //
+//  形状面口径:枚举全集为对齐 Acrobits API 形状而保留——部分成员
+//  当前无产生路径(App 不会收到),不清除,保证跨端/后续演进枚举值
+//  稳定。
+//
 
 import Foundation
 

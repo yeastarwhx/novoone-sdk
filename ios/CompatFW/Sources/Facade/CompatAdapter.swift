@@ -45,7 +45,7 @@ struct AccountSnapshot {
             UserDefaults.standard.set(migrated, forKey: storageKey)
         }
         // Keychain 读不到(未登录/已登出/系统异常)→ 返回 nil 走无快照
-        // 路径,不以无凭证参数发起注册(对齐 dev-webrtc 219f069b 读取边界)
+        // 路径,不以无凭证参数发起注册(Keychain 读取边界)
         guard let password = CompatKeychain.sipPassword(), !password.isEmpty else {
             return nil
         }
@@ -63,7 +63,7 @@ struct AccountSnapshot {
     }
 
     func save() {
-        // 密码独立进 Keychain(219f069b 整改语义:plist 可被备份提取;
+        // 密码独立进 Keychain(安全整改:plist 可被备份提取;
         // Keychain ThisDeviceOnly 硬件加密、不进备份/不同步 iCloud),
         // dict 只落其余注册参数
         CompatKeychain.setSipPassword(password)
@@ -405,7 +405,7 @@ final class CompatAdapter: NSObject, SipEngineCallback {
     // MARK: - VoIP push(CallKit report 红线 + 唤醒注册)
 
     /// push.handle:payload 字段契约(id/traceId/displayName/callerNumber,
-    /// 取证自 RN 一阶段 AppDelegate)。report 先行(Apple 红线:push 回调
+    /// 取证自 RN AppDelegate)。report 先行(Apple 红线:push 回调
     /// 返回前必须发起 reportNewIncomingCall——coordinator 引擎 init 时已
     /// 就绪,不依赖 engineStart);唤醒注册异步,不阻塞 push 回调返回。
     /// caller 字段缺失(本地通知转发路径 NovoEngine.handleIncomingCall)
@@ -462,8 +462,7 @@ final class CompatAdapter: NSObject, SipEngineCallback {
             }
             // 注册未成功(REGISTER 在途/失败重试中):挂起撤除——立即撤会让
             // 重试 REGISTER 无唤醒头、服务器无法配对 push,该通来电 INVITE
-            // 不下发(弱网时序缺口,对齐 dev-webrtc abdf59e4 注册 200 事件
-            // 驱动语义);45s 兜底防头永久粘性
+            // 不下发(弱网时序缺口,注册 200 事件驱动语义);45s 兜底防头永久粘性
             scheduleHeaderWithdrawal(name)
         } else if method.caseInsensitiveCompare("INVITE") == .orderedSame {
             inviteHeaders.removeValue(forKey: name)
@@ -1140,7 +1139,7 @@ final class CompatAdapter: NSObject, SipEngineCallback {
     }
 
     func onCallKitEvent(_ event: [AnyHashable: Any]?) {
-        // CallKit 动作事件由 NovoSDK_Cx/Coordinator 链消费(Phase 4),不外发
+        // CallKit 动作事件由 NovoSDK_Cx/Coordinator 链消费,不外发
     }
 
     // MARK: - 状态发布

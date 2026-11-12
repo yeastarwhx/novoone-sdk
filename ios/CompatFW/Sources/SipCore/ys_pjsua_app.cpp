@@ -4,6 +4,10 @@
  * 应用层封装，接口形状与 novoone 旧版封装保持一致。信令流程全部收敛到这里：
  * 各端 (iOS/Android/Linux) 上层只调 ys_* 接口 + 处理 SDP 直通回调，
  * 不再直接触碰 pjsua C API、缓冲区生命周期和 User-Agent 头构造。
+ *
+ * 双仓同步约定：iOS SDK 仓（ios/CompatFW/Sources/SipCore/
+ * ys_pjsua_app.cpp 与 ios/CompatFW/Vendor/pjsip-include/ys_pjsua_app.h）
+ * 持有编译副本——任一侧修改后必须同步另一侧，diff 逐字节一致。
  */
 
 #include "ys_pjsua_app.h"
@@ -215,7 +219,7 @@ static void bridge_on_incoming_call(pjsua_acc_id acc_id,
 	PJ_LOG(4, (THIS_FILE, "incoming call %d (acc %d, WebRTC async answer)",
 	           call_id, acc_id));
 	/* 180 Ringing：pjsua 不自动应答振铃（上游设计由应用显式发），
-	 * 不发则对端/服务器不知被叫振铃——实测 8 秒即被 CANCEL（487）。
+	 * 不发则对端/服务器不知被叫振铃——8 秒即被 CANCEL（487）。
 	 * 180 无 SDP 可立即发出；200 仍由应用完成 WebRTC 协商后异步调
 	 * ys_answer_call_with_sdp。EARLY 状态同时驱动上层视图
 	 * IncomingTrying -> IncomingRinging（弹屏/可接听条件）。 */
@@ -331,7 +335,7 @@ int ys_init_pjsua(const ys_pjsua_callback *cb, int sip_port)
 	status = pjsua_init(&cfg, &log_cfg, &media_cfg);
 	if (status != PJ_SUCCESS) {
 		PJ_LOG(1, (THIS_FILE, "ys_init_pjsua: pjsua_init failed: %d", status));
-		return -1;
+		goto on_fail;
 	}
 
 	pjsua_transport_config tcfg;
@@ -358,18 +362,35 @@ int ys_init_pjsua(const ys_pjsua_callback *cb, int sip_port)
 		PJ_LOG(1, (THIS_FILE, "ys_init_pjsua: %s transport failed: %d",
 		           g_sip_transport == 2 ? "TLS" :
 		           (g_sip_transport ? "TCP" : "UDP"), status));
-		return -1;
+		goto on_fail;
 	}
 
 
 	status = pjsua_start();
 	if (status != PJ_SUCCESS) {
 		PJ_LOG(1, (THIS_FILE, "ys_init_pjsua: pjsua_start failed: %d", status));
-		return -1;
+		goto on_fail;
 	}
 
-	PJ_LOG(3, (THIS_FILE, "ys_init_pjsua: ready (port=%d)", tcfg.port));
+	{
+		pjsua_transport_info ti;
+		if (pjsua_transport_get_info(tid, &ti) == PJ_SUCCESS)
+			PJ_LOG(3, (THIS_FILE,
+			           "ys_init_pjsua: ready (local %.*s:%d)",
+			           (int)ti.local_name.host.slen,
+			           ti.local_name.host.ptr,
+			           (int)ti.local_name.port));
+		else
+			PJ_LOG(3, (THIS_FILE, "ys_init_pjsua: ready"));
+	}
 	return 0;
+
+on_fail:
+	/* 回收半初始化状态：pjsua_create 成功后的失败若不销毁，残留的
+	 * 线程/端点会让本进程内的再次 ys_init_pjsua 永远失败
+	 * （pjsua_create 二次调用报已存在），初始化重试彻底堵死 */
+	pjsua_destroy();
+	return -1;
 }
 
 int ys_destroy_pjsua(void)
@@ -386,7 +407,7 @@ int ys_set_sip_transport(int transport)
 		return -1;
 #if !defined(PJ_HAS_SSL_SOCK) || !PJ_HAS_SSL_SOCK
 	/* 注意：本函数在 ys_init_pjsua 之前调用（pjlib 未初始化、线程未
-	 * 注册），此处禁止任何 pjlib 调用——包括 PJ_LOG（实测会触发
+	 * 注册），此处禁止任何 pjlib 调用——包括 PJ_LOG（会触发
 	 * pj_thread_this 断言直接 abort，启动崩溃根因） */
 	if (transport == 2)
 		return -1;
@@ -474,7 +495,7 @@ pjsua_acc_id ys_register_account(const ys_acc_registerinfo *reginfo)
 	if (reginfo->register_expires > 0)
 		acc.reg_timeout = (unsigned)reginfo->register_expires;
 	/* 注册失败自动重试（默认 0 不重试）：进程被推送拉起的冷启动窗口
-	 * DNS/网络可能未就绪（实测 502 PJ_ERESOLVE），不重试则账号停在
+	 * DNS/网络可能未就绪（曾见 502 PJ_ERESOLVE），不重试则账号停在
 	 * "在册未注册"直到下个外部事件。10s 间隔与来电推送窗口匹配 */
 	acc.reg_retry_interval = 10;
 	/* 网络切换恢复（ys_handle_ip_change）时上游对活跃通话的处理标志：
@@ -485,7 +506,7 @@ pjsua_acc_id ys_register_account(const ys_acc_registerinfo *reginfo)
 	acc.ip_change_cfg.reinvite_flags = 0;
 	/* P-hint: background 仅由推送唤醒路径经 ys_set_register_headers
 	 * 粘性注入（普通注册不带）：服务器按该头识别"推送唤醒的后台注册"
-	 * 并把 pending 呼入 INVITE 下发到这条注册（旧栈 TCP 实测：
+	 * 并把 pending 呼入 INVITE 下发到这条注册（旧栈 TCP 行为：
 	 * 唤醒 re-REGISTER 带此头后 INVITE 沿注册连接到达；
 	 * 缺此头则 TCP 场景 INVITE 不下发）。此前"旧栈不带此头"的结论
 	 * 误自前台正常注册的对比，已更正 */
@@ -569,11 +590,11 @@ int ys_handle_ip_change(void)
 
 	/* shutdown_transport=TRUE（默认）：主动 shutdown 全部 TCP/TLS 连接
 	 * ——半开死链的唯一可靠淘汰手段，静默断网被动检测不到。
-	 * restart_listener=FALSE（改默认，真机实测）：本工程为
+	 * restart_listener=FALSE（改默认）：本工程为
 	 * 纯 outbound 客户端（proxy 架构，所有连接主动出站，listener 无
 	 * 入站用途），而上游重启 listener 在网络切换瞬间 bind 新接口存在
 	 * 竞态失败且不重试——一旦失败 TCP factory 永久丢失，后续所有
-	 * 请求 PJSIP_EUNSUPTRANSPORT（真机实测）。listener 保持原绑定，
+	 * 请求 PJSIP_EUNSUPTRANSPORT。listener 保持原绑定，
 	 * 出站连接不受影响。异步状态机，进度经 bridge_on_ip_change_progress
 	 * 上报，应用在 SHUTDOWN_TP 步完成后即可走媒体恢复 */
 	pjsua_ip_change_param param;
@@ -622,32 +643,27 @@ static int build_dst_url(pjsua_acc_id acc_id, const char *dst_number,
 	return 0;
 }
 
-/* 解析 "Name: Value" 行（'\n' 分隔）构造 msg_data（呼出预置头与
- * re-INVITE 附加头共用）。头节点与 name/value 用静态存储：
- * pjsua_call_make_call_with_sdp_str / pjsua_call_reinvite_with_sdp_str
- * 内部（pjsua_process_msg_data）会把头 clone 进消息 pool，调用返回后
- * 本列表即失效可复用 */
-static int build_msg_data_from_lines(pjsua_msg_data *msg_data, const char *src)
+/* 解析一行 "Name: Value"（'\n' 分隔）：成功填充 name/value（去首尾
+ * 空格、value 去 \r，超容截断）并推进 *pp 到下一行首，返回 1；无更
+ * 多可解析行返回 0。无冒号/名超长的行跳过不视为错误（呼出预置头与
+ * REGISTER 粘性头共用同一套行规则） */
+static int parse_header_line(const char **pp, char *name, int name_cap,
+                             char *value, int value_cap)
 {
-	static pjsip_generic_string_hdr hdrs[8];
-	static char name_buf[8][64];
-	static char value_buf[8][128];
-	const char *p = src;
-	int count = 0;
+	const char *p = *pp;
+	const char *line_end;
+	const char *colon;
+	const char *name_end;
+	const char *value_start;
+	const char *value_end;
+	int name_len;
+	int value_len;
 
-	pjsua_msg_data_init(msg_data);
-
-	while (*p && count < 8) {
-		const char *line_end = strchr(p, '\n');
-		const char *colon = strchr(p, ':');
-		const char *name_end;
-		const char *value_start;
-		const char *value_end;
-		int name_len;
-		int value_len;
+	while (*p) {
+		line_end = strchr(p, '\n');
+		colon = strchr(p, ':');
 
 		if (!colon || (line_end && colon > line_end)) {
-			/* 无冒号的行跳过 */
 			if (!line_end)
 				break;
 			p = line_end + 1;
@@ -658,7 +674,7 @@ static int build_msg_data_from_lines(pjsua_msg_data *msg_data, const char *src)
 		while (name_end > p && name_end[-1] == ' ')
 			name_end--;
 		name_len = (int)(name_end - p);
-		if (name_len <= 0 || name_len >= (int)sizeof(name_buf[0])) {
+		if (name_len <= 0 || name_len >= name_cap) {
 			if (!line_end)
 				break;
 			p = line_end + 1;
@@ -672,29 +688,59 @@ static int build_msg_data_from_lines(pjsua_msg_data *msg_data, const char *src)
 		while (value_end > value_start && value_end[-1] == '\r')
 			value_end--;
 		value_len = (int)(value_end - value_start);
-		if (value_len >= (int)sizeof(value_buf[0]))
-			value_len = (int)sizeof(value_buf[0]) - 1;
+		if (value_len >= value_cap)
+			value_len = value_cap - 1;
 
-		memcpy(name_buf[count], p, name_len);
-		name_buf[count][name_len] = '\0';
+		memcpy(name, p, name_len);
+		name[name_len] = '\0';
 		if (value_len > 0)
-			memcpy(value_buf[count], value_start, value_len);
-		value_buf[count][value_len] = '\0';
+			memcpy(value, value_start, value_len);
+		value[value_len] = '\0';
 
-		{
-			pj_str_t hname = pj_str(name_buf[count]);
-			pj_str_t hvalue = pj_str(value_buf[count]);
-			pjsip_generic_string_hdr_init2(&hdrs[count], &hname, &hvalue);
-			pj_list_push_back(&msg_data->hdr_list, &hdrs[count]);
-			count++;
-		}
-
-		if (!line_end)
-			break;
-		p = line_end + 1;
+		*pp = line_end ? line_end + 1 : p + strlen(p);
+		return 1;
 	}
+	*pp = p;
+	return 0;
+}
 
+/* 通用：src 头串 -> 最多 8 个静态头节点推入 list。节点与 name/value
+ * 缓冲由调用方给定（pjsua_acc_add / pjsua_process_msg_data 会把节点
+ * clone 进各自 pool，静态缓冲调用返回后即可复用） */
+static int build_hdr_nodes(const char *src, pjsip_hdr *list,
+                           pjsip_generic_string_hdr *nodes,
+                           char (*names)[64], char (*values)[128])
+{
+	const char *p = src;
+	int count = 0;
+
+	while (count < 8) {
+		pj_str_t hname;
+		pj_str_t hvalue;
+
+		if (!parse_header_line(&p, names[count], (int)sizeof(names[0]),
+		                       values[count], (int)sizeof(values[0])))
+			break;
+		hname = pj_str(names[count]);
+		hvalue = pj_str(values[count]);
+		pjsip_generic_string_hdr_init2(&nodes[count], &hname, &hvalue);
+		pj_list_push_back(list, &nodes[count]);
+		count++;
+	}
 	return count;
+}
+
+/* "Name: Value\n" 多行 -> msg_data 头列表（呼出 INVITE 预置头与
+ * re-INVITE 附加头共用；一次性，调用返回即失效） */
+static int build_msg_data_from_lines(pjsua_msg_data *msg_data, const char *src)
+{
+	static pjsip_generic_string_hdr hdrs[8];
+	static char name_buf[8][64];
+	static char value_buf[8][128];
+
+	pjsua_msg_data_init(msg_data);
+	return build_hdr_nodes(src, &msg_data->hdr_list, hdrs,
+	                       name_buf, value_buf);
 }
 
 int ys_set_outgoing_invite_headers(const char *headers)
@@ -706,69 +752,12 @@ int ys_set_outgoing_invite_headers(const char *headers)
 	return 0;
 }
 
-/* 解析 "Name: Value" 行到静态头节点数组（规则与 g_invite_headers 一致：
- * 无冒号行跳过、名/值去首尾空格、最多 8 个） */
+/* g_reg_headers -> 静态头节点数组（粘性 REGISTER 头；规则同
+ * build_msg_data_from_lines） */
 static int build_reg_hdr_list(pjsip_hdr *reg_hdr_list)
 {
-	char *p = g_reg_headers;
-	int count = 0;
-	while (*p && count < 8) {
-		char *line_end = strchr(p, '\n');
-		char *colon = strchr(p, ':');
-		char *name_end;
-		char *value_start;
-		char *value_end;
-		int name_len;
-		int value_len;
-
-		if (!colon || (line_end && colon > line_end)) {
-			if (!line_end)
-				break;
-			p = line_end + 1;
-			continue;
-		}
-
-		name_end = colon;
-		while (name_end > p && name_end[-1] == ' ')
-			name_end--;
-		name_len = (int)(name_end - p);
-		if (name_len <= 0 || name_len >= (int)sizeof(g_reg_hdr_names[0])) {
-			if (!line_end)
-				break;
-			p = line_end + 1;
-			continue;
-		}
-
-		value_start = colon + 1;
-		while (*value_start == ' ')
-			value_start++;
-		value_end = line_end ? line_end : p + strlen(p);
-		while (value_end > value_start && value_end[-1] == '\r')
-			value_end--;
-		value_len = (int)(value_end - value_start);
-		if (value_len >= (int)sizeof(g_reg_hdr_values[0]))
-			value_len = (int)sizeof(g_reg_hdr_values[0]) - 1;
-
-		memcpy(g_reg_hdr_names[count], p, name_len);
-		g_reg_hdr_names[count][name_len] = '\0';
-		if (value_len > 0)
-			memcpy(g_reg_hdr_values[count], value_start, value_len);
-		g_reg_hdr_values[count][value_len] = '\0';
-
-		{
-			pj_str_t hname = pj_str(g_reg_hdr_names[count]);
-			pj_str_t hvalue = pj_str(g_reg_hdr_values[count]);
-			pjsip_generic_string_hdr_init2(&g_reg_hdr_nodes[count],
-			                               &hname, &hvalue);
-			pj_list_push_back(reg_hdr_list, &g_reg_hdr_nodes[count]);
-			count++;
-		}
-
-		if (!line_end)
-			break;
-		p = line_end + 1;
-	}
-	return count;
+	return build_hdr_nodes(g_reg_headers, reg_hdr_list, g_reg_hdr_nodes,
+	                       g_reg_hdr_names, g_reg_hdr_values);
 }
 
 int ys_set_register_headers(const char *headers)
@@ -865,13 +854,9 @@ int ys_reinvite_with_sdp(pjsua_call_id call_id, const char *sdp_str,
 	int hdr_count = 0;
 	pjsua_msg_data_init(&msg_data);
 	if (headers && headers[0]) {
+		/* 坏行在解析器内跳过，附加头不因个别行异常而整体放弃
+		 * （调用方语义见头文件注释） */
 		hdr_count = build_msg_data_from_lines(&msg_data, headers);
-		if (hdr_count < 0) {
-			/* 解析失败按无附加头继续（调用方语义见头文件注释） */
-			PJ_LOG(2, (THIS_FILE, "ys_reinvite_with_sdp: header parse"
-				" failed (%d), continue without", hdr_count));
-			pjsua_msg_data_init(&msg_data);
-		}
 	}
 	pj_status_t status = pjsua_call_reinvite_with_sdp_str(
 		call_id, &sdp, NULL, hdr_count > 0 ? &msg_data : NULL);

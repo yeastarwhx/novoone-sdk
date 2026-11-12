@@ -9,7 +9,7 @@ import PackageDescription
 // 双部署形态:
 // - SDK 仓库本目录:构建缓存(Binaries/ gitignore,../build-ios-sdk.sh 产出)
 // - App 仓库 ios/NovoSDKCompat:交付形态(**入库**,build-ios-sdk.sh
-//   同步)——App 团队 clone 即得双引擎切换能力,无 novoone-sdk 权限依赖。
+//   同步)——App 团队 clone 即得双引擎切换能力,无 SDK 源码仓权限依赖。
 // 本文件由构建同步覆盖,两处保持一致,勿单侧手改。
 let package = Package(
     name: "NovoSDKSwiftPackage",

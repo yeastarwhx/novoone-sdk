@@ -3,7 +3,7 @@
 
 /*
  * SipNetworkMonitor — 换网检测（网络切换恢复链的检测端，
- * 10-20-ios-call-continuity；规格对齐安卓 NetworkMonitor.java）。
+ * 规格对齐安卓 NetworkMonitor.java）。
  *
  * 三分支换网判定（与安卓/RN useNetworkRestoreSync 双端语义一致）：
  *   - lost-recovered：全部断网后恢复（断网窗口 TCP 已死，IP 同样必触发）
@@ -59,8 +59,8 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)stop;
 
 /*
- * App 回前台补判定（挂起期 NWPathMonitor 事件不送达的 iOS 特有缺口，
- * F6/E13）：强制刷新当前 path 快照后直接走判定体——不经防抖窗（回前台
+ * App 回前台补判定（挂起期 NWPathMonitor 事件不送达的 iOS 特有缺口）：
+ * 强制刷新当前 path 快照后直接走判定体——不经防抖窗（回前台
  * 是一次性补判，无连发合并需求）。主线程。
  */
 - (void)checkNowOnForeground;

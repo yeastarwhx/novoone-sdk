@@ -2,7 +2,7 @@
 //  CompatKeychain.swift
 //  CompatFW
 //
-//  SIP 密码 Keychain 存取(对齐 dev-webrtc 219f069b 整改语义;compat 无
+//  SIP 密码 Keychain 存取(密码不落 plist 的安全整改语义;compat 无
 //  三方依赖,Security 原生实现)。快照 plist 可被备份提取;Keychain
 //  ThisDeviceOnly 硬件加密、不进备份/不同步 iCloud。
 //
@@ -27,7 +27,8 @@ enum CompatKeychain {
             kSecAttrService as String: sipAuthService,
             kSecAttrAccount as String: sipPasswordKey,
         ]
-        // 先 Update(已有条目),NotFound 再 Add(条目不含 accessible 更新面)
+        // 先 Update(已有条目),NotFound 再 Add(条目不含 accessible 更新面);
+        // Add 撞并发创建竞态返回 DuplicateItem 时回退 Update 兜住
         var status = SecItemUpdate(query as CFDictionary,
                                    [kSecValueData as String: data] as CFDictionary)
         if status == errSecItemNotFound {
@@ -35,6 +36,10 @@ enum CompatKeychain {
             addQuery[kSecValueData as String] = data
             addQuery[kSecAttrAccessible as String] = kSecAttrAccessibleAlwaysThisDeviceOnly
             status = SecItemAdd(addQuery as CFDictionary, nil)
+            if status == errSecDuplicateItem {
+                status = SecItemUpdate(query as CFDictionary,
+                                       [kSecValueData as String: data] as CFDictionary)
+            }
         }
         if status != errSecSuccess {
             NSLog("[compat] keychain save password failed (status=%ld)", status)

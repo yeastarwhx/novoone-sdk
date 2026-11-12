@@ -39,7 +39,7 @@
 - (void)onLog:(int)level message:(NSString *)msg;
 
 /**
- * CallKit 动作状态事件（二阶段新增）：action=startCall（系统通话记录
+ * CallKit 动作状态事件：action=startCall（系统通话记录
  * 回拨，RN 拉起去电 UI）等。键为 action/source/uuid/remoteNumber。
  * CallKit 关闭时不触发。桥接层（NovoEventHandler）同步实现。
  */

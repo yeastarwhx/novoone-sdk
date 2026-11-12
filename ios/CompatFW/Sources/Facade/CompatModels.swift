@@ -7,13 +7,19 @@
 
 import Foundation
 
-// MARK: - 通话统计(App 消费字段全集,§1.8)
+// MARK: - 通话统计(App 消费字段全集)
 
 @objcMembers public final class CallStatisticsTraffic: NSObject {
     public var bytesSent: Int64 = 0
     public var bytesReceived: Int64 = 0
 }
 
+/// compat 填充面(CompatAdapter.statistics):clockRateInHertz /
+/// maxJitter / jitterBufferPacketLossPercentage / meteredNetworkJitter /
+/// avgRoundTripTimeInMilliseconds 有值;traffic、avgJitter、
+/// networkPacketLossPercentage、meteredAudioJitter、
+/// lastRoundTripTimeInMilliseconds 无引擎数据源,恒默认值
+/// (形状保留,Acrobits 契约字段不裁剪)
 @objcMembers public final class CallStatistics: NSObject {
     public var traffic: CallStatisticsTraffic?
     public var clockRateInHertz: Int = 0
@@ -42,7 +48,7 @@ import Foundation
     public var active = true
 }
 
-// MARK: - 网络状态(App:getNetworkStatus(call)?.networkInterfaceName,§1.1)
+// MARK: - 网络状态(App:getNetworkStatus(call)?.networkInterfaceName)
 
 @objcMembers public final class NovoSDKNetworkStatus: BridgeClass {
     public let networkInterfaceName: String?
@@ -153,11 +159,14 @@ import Foundation
 // MARK: - NovoSDKPreferences(App 消费属性子集)
 
 @objcMembers public final class NovoSDKPreferences: NSObject {
+    /// 以下五项为形状保留的安慰剂字段:引擎无对应消费点(Acrobits 下
+    /// 各自有真实作用),赋值静默无效,不清除以保迁移契约
     public var trafficLogging = false
     public var echoSuppressionEnabled = false
     public var volumeBoostMicrophone: Int32 = 0
     public var volumeBoostPlayback: Int32 = 0
     public var userAgentOverride: String?
+
     public var useCallKit = true
 
     /// 系统通话记录同步（App 默认关闭语义：冷启动 UserDefaults 覆盖）。

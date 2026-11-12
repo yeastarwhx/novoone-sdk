@@ -167,7 +167,7 @@ def main() -> None:
 				{uid('HDRPHASE', 'PH')} /* Headers */,
 				{uid('SRCPHASE', 'PH')} /* Sources */,
 				{uid('FWPHASE', 'PH')} /* Frameworks */,
-				{uid('RES PHASE', 'PH').replace(' ', '')} /* Resources */,
+				{uid('RESPHASE', 'PH')} /* Resources */,
 			);
 			buildRules = (
 			);

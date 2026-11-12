@@ -154,7 +154,7 @@
 				478A48BB86710B7957ECBCA3 /* Headers */,
 				017633F20702737464FB077E /* Sources */,
 				F3DB688FCB6EBA898E18A639 /* Frameworks */,
-				FA3C113082CBAF7803D3BB9F /* Resources */,
+				3CA114F57C48296DB4104D63 /* Resources */,
 			);
 			buildRules = (
 			);

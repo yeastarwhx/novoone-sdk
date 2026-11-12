@@ -2,14 +2,13 @@
 //  SipCallKitCoordinator.h
 //  NovoOneApp
 //
-//  CallKit 协作模块（detail-design §4.3）：CXProvider/CXCallController 封装，
+//  CallKit 协作模块：CXProvider/CXCallController 封装，
 //  收敛 CallKit 全部状态变化——动作（answer/end/start）、音频会话激活线、
 //  会话 UUID 映射。桥接层只透传事件（onCallKitEvent），不持有 CallKit 状态。
 //
 //  线程纪律：provider delegate 绑定主队列；coordinator 全部方法仅主线程调用
 //  （引擎侧调用点均在 runOnMain 内）。
 //
-//  Created for phase-2 task: iOS background call (10-15).
 //
 
 #ifndef SIP_CALLKIT_COORDINATOR_H

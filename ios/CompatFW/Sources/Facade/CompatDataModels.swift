@@ -5,6 +5,9 @@
 //  Acrobits 兼容层:数据类(XmlTree / JsonDict / Event / Stream 等),
 //  纯数据容器,无引擎依赖,直接给出可用实现。
 //
+//  形状面口径:部分类/成员为对齐 Acrobits API 形状而保留、当前 App
+//  未消费——保留是迁移契约的一部分,不按死代码清除。
+//
 
 import Foundation
 
@@ -109,7 +112,7 @@ import Foundation
     }
 }
 
-// MARK: - JsonObject / JsonDict(transients 与 JSON 数据支撑,D8:NSDictionary 桥接)
+// MARK: - JsonObject / JsonDict(transients 与 JSON 数据支撑)
 
 @objcMembers public class JsonObject: NSObject {
     var storage: [String: Any] = [:]

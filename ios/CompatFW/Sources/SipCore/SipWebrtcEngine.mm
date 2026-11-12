@@ -33,7 +33,7 @@
 
 /*
  * =====================================================================
- * 常量（对齐安卓 SipWebrtcEngine / detail-design §1.1）
+ * 常量（对齐安卓 SipWebrtcEngine）
  * =====================================================================
  */
 
@@ -78,18 +78,18 @@ static NSString * sUserAgentFullOverride = nil;
 static NSString * sReinviteExtraHeaders = nil;
 
 /* ICE STUN 服务器缺省兜底（服务器 basic-info stunAddresses 下发前）。
- * F4 候选极简化（对齐安卓上线实现）：rtpengine（ICE-lite）按
+ * 候选极简化（对齐安卓上线实现）：rtpengine（ICE-lite）按
  * 收包源地址回包（prflx 学习），host 候选直发 check 即可达，srflx 在
  * 对称 NAT 下本就无效——STUN 配置链（下发/解析/存储）保留但不再进
  * RTCConfiguration，见 setupPeerConnection 注释 */
 static NSString * const kSipDefaultStunServer = @"stun:stun.cloudflare.com:3478";
 static NSString * const kSipStunUrlScheme     = @"stun:";
 
-/* ---------------- 编解码配置（10-24 webrtc-codec-config，对齐安卓） ----------------
+/* ---------------- 编解码配置（对齐安卓） ----------------
  *
  * 服务器编码体系（Acrobits 惯例数字 ID）：0=PCMU 8=PCMA 9=G722
- * 18=G729 103=OPUS。客户端一期支持 PCMU/PCMA/G722/OPUS 四种，
- * G729(18) 二期支持——解析配置时静默过滤（SipCodecMimeForId 返回
+ * 18=G729 103=OPUS。客户端支持 PCMU/PCMA/G722/OPUS 四种，
+ * G729(18) 暂不支持(bcg729 授权待定)——解析配置时静默过滤（SipCodecMimeForId 返回
  * nil 即忽略）；GSM=3/ILBC=102 等其余 ID 一并忽略 */
 
 /* 默认 codec order（服务器侧惯例全集；解析只认 4 种支持编码，
@@ -202,7 +202,7 @@ static NSSet<NSString *> * SipAudioCodecNamesFromSdp(NSString *sdp)
 /* ICE gathering 看门狗双窗（安卓 GATHER_WATCHDOG_MS / CANDIDATE_FLUSH_MS）：
  * SLD 后先布 800ms 兜底窗（候选回调异常时带已收集候选即发）；候选每到达
  * 一个重臂 150ms 落盘窗——最后一个候选 +150ms 即发（localDescription
- * 候选并入滞后于回调的保守间隔），不等 COMPLETE。iOS 实证（10-21 真机
+ * 候选并入滞后于回调的保守间隔），不等 COMPLETE。iOS 真机实证（
  * 日志）：GATHER_CONTINUALLY 下 COMPLETE 状态永不到达（安卓 ~3ms 即
  * COMPLETE 属 SDK 版本差异），发送路径必须走候选去抖窗 */
 static NSTimeInterval const kSipGatherWatchdogSec = 0.8;
@@ -216,7 +216,7 @@ static NSTimeInterval const kSipCandidateFlushSec = 0.15;
  * 已收集候选，CONFIRMED 态不触发） */
 static long long const kZeroCandidateBudgetMs = 6000;
 
-/* 网络切换恢复（10-20-ios-call-continuity，对齐安卓 1810-2032 编排）：
+/* 网络切换恢复（对齐安卓）：
  * 信令恢复 5s 看门狗——SHUTDOWN_TP/COMPLETED 回调丢失（上游状态机卡在
  * 等服务器响应）时按已完成部分继续，注册由 reg watch 兜底 */
 static NSTimeInterval const kNetRecoveryIpChangeTimeoutSec = 5.0;
@@ -482,7 +482,7 @@ static void ys_fill_field(char *dst, size_t size, NSString *value)
 @property (nonatomic, assign) SipTransportType transport;
 @property (nonatomic, copy, nullable) NSString *lastRegText;
 @property (nonatomic, weak, nullable) id<SipEngineCallback> callback;
-/* ICE STUN 服务器（服务器下发经 setStunServers 覆盖。F4 候选极简化后
+/* ICE STUN 服务器（服务器下发经 setStunServers 覆盖。候选极简化后
  * 仅存储不消费——setupPeerConnection 固定空 iceServers，配置链保留
  * （接口契约不变，服务器下发链零感知）。命名避开公开方法
  * setStunServers: 的合成存取器冲突） */
@@ -514,7 +514,7 @@ static void ys_fill_field(char *dst, size_t size, NSString *value)
 @property (nonatomic, strong, nullable) NSTimer *audioForceWatchdog;
 /* 5s 兜底 arm 时记录会话 sessionId（fire 时校验仍处通话中） */
 @property (nonatomic, assign) long long audioForceSessionId;
-/* ---------------- 网络切换恢复（10-20，仅主线程读写） ---------------- */
+/* ---------------- 网络切换恢复（仅主线程读写） ---------------- */
 /* 换网检测器（NWPathMonitor 三分支判定 + 800ms 防抖，见
  * SipNetworkMonitor.h；engineStart 成功后 start / shutdown 前 stop） */
 @property (nonatomic, strong, nullable) SipNetworkMonitor *netMonitor;
@@ -768,7 +768,7 @@ static void ys_fill_field(char *dst, size_t size, NSString *value)
             [self webrtcLog:@"audio session configured (playAndRecord / voiceChat)"];
         }
 
-        /* CallKit 模式音频会话重构（detail 5.2 步骤 4）：音频单元启停交由
+        /* CallKit 模式音频会话重构：音频单元启停交由
          * CXProviderDelegate didActivate/didDeactivate 驱动（引擎
          * onCallKitAudioSessionActivated/Deactivated 设 isAudioEnabled） */
         RTCAudioSession *rtcSession = [RTCAudioSession sharedInstance];
@@ -1444,7 +1444,7 @@ static void ys_fill_field(char *dst, size_t size, NSString *value)
     }];
 }
 
-/* 呼出链（安卓 callMake:457-488 + startOutgoingCall:491-536）：
+/* 呼出链（安卓 callMake + startOutgoingCall）：
  * registry.create(OUT) → X-Request-ID 头注入 → PC 建立 → createOffer
  * → SLD → gather 看门狗(双窗：800ms 兜底/候选后 150ms) → ys_make_call_with_sdp（callId 回填，
  * awaitingAnswer=true） */
@@ -1517,7 +1517,7 @@ static void ys_fill_field(char *dst, size_t size, NSString *value)
     }];
 }
 
-/* 接听来电（安卓 answerInternal:554-595） */
+/* 接听来电（安卓 answerInternal） */
 - (void)callAnswer:(NSInteger)callId
 {
     [self runOnMain:^{
@@ -1573,7 +1573,7 @@ static void ys_fill_field(char *dst, size_t size, NSString *value)
     }];
 }
 
-/* 拒接来电（安卓 rejectInternal:612-636） */
+/* 拒接来电（安卓 rejectInternal） */
 - (void)callReject:(NSInteger)callId
 {
     [self runOnMain:^{
@@ -1605,7 +1605,7 @@ static void ys_fill_field(char *dst, size_t size, NSString *value)
     }];
 }
 
-/* 挂断（安卓 callHangup:639-663）。呼出未提交 INVITE 的会话 callId<0，
+/* 挂断（安卓 callHangup）。呼出未提交 INVITE 的会话 callId<0，
  * findByCallId 拒绝负值无法定位——该窗口期挂断由 callHangupByGroupId
  * 承接（安卓引擎此处同为 no-op，是其待回溯缺陷，非对齐基准） */
 - (void)callHangup:(NSInteger)callId
@@ -1682,7 +1682,7 @@ static void ys_fill_field(char *dst, size_t size, NSString *value)
     }];
 }
 
-/* hold/resume 入口（安卓 callHold:906-922 → holdInternal:924-959） */
+/* hold/resume 入口（安卓 callHold → holdInternal） */
 - (void)callHold:(NSInteger)callId held:(BOOL)held
 {
     [self runOnMain:^{
@@ -1699,7 +1699,7 @@ static void ys_fill_field(char *dst, size_t size, NSString *value)
     }];
 }
 
-/* 静音/取消静音（安卓 callMute:991-1008）：track isEnabled，不发 re-INVITE */
+/* 静音/取消静音（安卓 callMute）：track isEnabled，不发 re-INVITE */
 - (void)callMute:(NSInteger)callId muted:(BOOL)muted
 {
     [self runOnMain:^{
@@ -1718,7 +1718,7 @@ static void ys_fill_field(char *dst, size_t size, NSString *value)
     }];
 }
 
-/* 盲转（安卓 callXfer:788-803） */
+/* 盲转（安卓 callXfer） */
 - (void)callXfer:(NSInteger)callId to:(NSString *)dest
 {
     [self runOnMain:^{
@@ -1733,7 +1733,7 @@ static void ys_fill_field(char *dst, size_t size, NSString *value)
     }];
 }
 
-/* 咨询转（安卓 callXferAttended:809-827） */
+/* 咨询转（安卓 callXferAttended） */
 - (void)callXferAttended:(NSInteger)callId destCallId:(NSInteger)destCallId
 {
     [self runOnMain:^{
@@ -1751,7 +1751,7 @@ static void ys_fill_field(char *dst, size_t size, NSString *value)
     }];
 }
 
-/* 通话中 DTMF（安卓 callDtmf:835-873）：遍历 senders 取 dtmfSender，
+/* 通话中 DTMF（安卓 callDtmf）：遍历 senders 取 dtmfSender，
  * canInsertDtmf 校验（未协商 telephone-event payload 则不可用），
  * insertDtmf(200ms, 100ms gap)；dtmfOff 契约由桥接层 no-op */
 - (void)callDtmf:(NSInteger)callId digits:(NSString *)digits
@@ -1787,7 +1787,7 @@ static void ys_fill_field(char *dst, size_t size, NSString *value)
     }];
 }
 
-/* 通话质量统计（安卓 getCallQuality:702-730 + parseQuality:733-785；
+/* 通话质量统计（安卓 getCallQuality + parseQuality；
  * JSON 组包对齐安卓 CallDelegate.getCallQualityJson：
  * {bars, network, codec, jitterMs, packetLossPct, roundTripMs}） */
 - (void)getCallQuality:(NSInteger)callId completion:(void (^)(NSString * _Nullable))completion
@@ -1825,13 +1825,13 @@ static void ys_fill_field(char *dst, size_t size, NSString *value)
     [self.registry purgeExpiredNow];
     NSMutableArray<NSDictionary *> *result = [[NSMutableArray alloc] init];
     for (SipCallSession *session in [self.registry snapshot]) {
-        /* CallKit 模式来电弹屏退役（R5/AC-3，check 修复）：未接听的来电
+        /* CallKit 模式来电弹屏退役：未接听的来电
          * 会话不上抛。RN 侧 IncomingCallScreen 由全量 callList 驱动——
          * StateChanged 事件与 getActiveCalls 冷启动 hydrate 均消费本快照，
          * 保留振铃条目会把 RN 来电屏与 CallKit 系统卡片叠现。
          * 判据 = callKitUuid 已绑定（系统卡片接管展示）：reportNewIncomingCall
          * 失败时 onCallKitReportFailedForUuid 解绑 uuid，会话即回到快照，
-         * 来电屏回退一阶段 RN 弹屏兜底（异常矩阵 4.3.4）。
+         * 来电屏回退 RN 弹屏兜底。
          * 接听后（IncomingAnswered 起）照常上抛——通话中 UI 拉起不受影响；
          * 未接听即终态（拒接/未接）仍上抛，RN 侧 prevCalls 为空走
          * "历史来电回放跳过面板"分支，无叠现。coordinator 未就绪
@@ -1847,7 +1847,7 @@ static void ys_fill_field(char *dst, size_t size, NSString *value)
     return result;
 }
 
-#pragma mark - CallKit 协作面（二阶段新增）
+#pragma mark - CallKit 协作面
 
 - (BOOL)hasRegisteredAccount
 {
@@ -1899,7 +1899,7 @@ static void ys_fill_field(char *dst, size_t size, NSString *value)
 {
     /* PushKit 红线路径：AppDelegate 在 push 回调内同步调用——
      * reportNewIncomingCall 必须在回调返回前发起。coordinator 异常未就绪
-     * 时返回 nil，走 RN 弹屏兜底（单点异常容错，见 detail 4.3.4） */
+     * 时返回 nil，走 RN 弹屏兜底（单点异常容错） */
     if (_callKitCoordinator == nil) {
         [self engineLog:@"reportIncomingCall skipped: coordinator not ready"];
         return nil;
@@ -2051,9 +2051,9 @@ static void ys_fill_field(char *dst, size_t size, NSString *value)
 
 - (void)onCallKitReportFailedForUuid:(NSUUID *)uuid
 {
-    /* reportNewIncomingCall 失败（异常矩阵 4.3.4）：系统卡片不可用——
+    /* reportNewIncomingCall 失败：系统卡片不可用——
      * 解绑会话 uuid，未接听来电重新进入 RN 快照（snapshotCalls 的
-     * CallKit 过滤按 uuid 绑定判定），来电屏回退一阶段 RN 弹屏兜底。
+     * CallKit 过滤按 uuid 绑定判定），来电屏回退 RN 弹屏兜底。
      * push 先行 report 失败时会话尚未创建（无匹配），此处安全空过 */
     [self runOnMain:^{
         for (SipCallSession *session in [self.registry snapshot]) {
@@ -2235,8 +2235,8 @@ static void ys_fill_field(char *dst, size_t size, NSString *value)
     }
 }
 
-/* pjsua 呼叫状态 → 视图状态映射（安卓 postCallState:1085-1142 +
- * computeViewState:1291-1342） */
+/* pjsua 呼叫状态 → 视图状态映射（安卓 postCallState +
+ * computeViewState） */
 - (void)handleCallState:(int)callId state:(int)state lastStatus:(int)lastStatus
 {
     [self.registry purgeExpiredNow];
@@ -2285,7 +2285,7 @@ static void ys_fill_field(char *dst, size_t size, NSString *value)
     [self notifySessionChanged:session];
 }
 
-/* 200 OK answer 到达（安卓 postAnswerSdp:1144-1172）：仅本地 offer
+/* 200 OK answer 到达（安卓 postAnswerSdp）：仅本地 offer
  * （INVITE/re-INVITE）在途时应用。每次 offer 都要应用其 answer，
  * 否则 PeerConnection 停在 have-local-offer，后续对端 offer 的
  * SRD 全被拒 */
@@ -2313,7 +2313,7 @@ static void ys_fill_field(char *dst, size_t size, NSString *value)
     }];
 }
 
-/* 来电 INVITE（安卓 postIncomingSdp:1179-1222）：缓存 offer 与头
+/* 来电 INVITE（安卓 postIncomingSdp）：缓存 offer 与头
  * （C 字符串已在回调入口深拷贝为 NSString），置 IncomingTrying 等
  * callAnswer / callReject；振铃（pjsua 自动 180）经 handleCallState
  * → IncomingRinging */
@@ -2360,7 +2360,7 @@ static void ys_fill_field(char *dst, size_t size, NSString *value)
     /* CallKit 模式：推送先行 report 的会话匹配（FIFO 号码命中复用 uuid）；
      * 未命中现场 report（无推送来电——服务器直接 INVITE）。本地铃声/
      * 振动改由系统卡片承担（双铃声冲突）；coordinator 未就绪（nil）
-     * 时保留 SipRingtoneHelper + RN 弹屏（一阶段行为）。 */
+     * 时保留 SipRingtoneHelper + RN 弹屏。 */
     if (_callKitCoordinator != nil) {
         NSUUID *uuid = [_callKitCoordinator matchIncoming:session.remoteNumber];
         if (uuid == nil) {
@@ -2381,7 +2381,7 @@ static void ys_fill_field(char *dst, size_t size, NSString *value)
     [self notifySessionChanged:session];
 }
 
-/* re-INVITE（安卓 postReinviteSdp:1224-1270）：对端发起重协商
+/* re-INVITE（安卓 postReinviteSdp）：对端发起重协商
  * （hold/resume 等）。在途 answer / 本地 offer（glare）时丢弃等重传 */
 - (void)handleReinviteSdp:(NSString *)sdp callId:(int)callId
 {
@@ -2424,7 +2424,7 @@ static void ys_fill_field(char *dst, size_t size, NSString *value)
     [self answerRemoteOffer:session offerSdp:sdp ?: @""];
 }
 
-/* REFER 转接进度（安卓 postTransferState:878-899）：final 2xx =
+/* REFER 转接进度（安卓 postTransferState）：final 2xx =
  * 转接成功（对端已与新目标建立通话），本方自动挂断；final 非 2xx
  * 失败，保持通话状态由用户决定 */
 - (void)handleTransferState:(int)callId status:(int)status isFinal:(BOOL)isFinal
@@ -2453,7 +2453,7 @@ static void ys_fill_field(char *dst, size_t size, NSString *value)
     }
 }
 
-#pragma mark - 视图状态映射（detail-design §1.x / 安卓 computeViewState）
+#pragma mark - 视图状态映射（对齐安卓 computeViewState）
 
 /* pjsua state/last_status → 会话视图状态；返回 nil 表示保持当前视图
  * （CONNECTING 等过渡态） */
@@ -2508,7 +2508,7 @@ static void ys_fill_field(char *dst, size_t size, NSString *value)
     }
 }
 
-/* 视图变化副作用的收口（回铃音控制等，安卓 handleViewSideEffects:1345-1354） */
+/* 视图变化副作用的收口（回铃音控制等，安卓 handleViewSideEffects） */
 - (void)handleViewSideEffects:(SipCallSession *)session view:(NSString *)view
 {
     if (session.isIncoming) {
@@ -2516,7 +2516,7 @@ static void ys_fill_field(char *dst, size_t size, NSString *value)
     }
     if ([view isEqualToString:SipCallStateRinging]) {
         /* CallKit 模式系统自带呼出回铃（含音频路由），本地回铃禁用防双声；
-         * coordinator 未就绪（nil）时保留（一阶段行为） */
+         * coordinator 未就绪（nil）时保留 */
         if (_callKitCoordinator == nil) {
             [SipRingtoneHelper playBackTone];
         }
@@ -2525,7 +2525,7 @@ static void ys_fill_field(char *dst, size_t size, NSString *value)
     }
 }
 
-/* 对端 offer 方向检测：sendonly/inactive = hold（安卓 detectRemoteHold:1357-1364） */
+/* 对端 offer 方向检测：sendonly/inactive = hold（安卓 detectRemoteHold） */
 + (BOOL)detectRemoteHold:(NSString *)sdp
 {
     if (sdp.length == 0) {
@@ -2537,7 +2537,7 @@ static void ys_fill_field(char *dst, size_t size, NSString *value)
 }
 
 /* SDP 候选过滤（呼出 INVITE / re-INVITE / answer 发送前统一走此函数；
- * 安卓 filterIpv6Candidates:2205 的对齐扩展——iOS WebRTC 全接口采集
+ * 安卓 filterIpv6Candidates 的对齐扩展——iOS WebRTC 全接口采集
  * host 候选（en0 + awdl 链路本地 + 蜂窝 × UDP/TCP），安卓仅在默认
  * 网络采集=单 UDP host。对 rtpengine（ICE-lite，按收包源地址 prflx
  * 学习）只有活跃接口的 UDP host 有意义：非活跃候选纯冗余，换网后旧
@@ -2620,7 +2620,7 @@ static void ys_fill_field(char *dst, size_t size, NSString *value)
     return [kept componentsJoinedByString:@"\n"];
 }
 
-#pragma mark - WebRTC：PeerConnection 建立（安卓 setupPeerConnection:1405-1428）
+#pragma mark - WebRTC：PeerConnection 建立（安卓 setupPeerConnection）
 
 - (void)setupPeerConnection:(SipCallSession *)session
 {
@@ -2628,7 +2628,7 @@ static void ys_fill_field(char *dst, size_t size, NSString *value)
         return;
     }
     RTCConfiguration *config = [[RTCConfiguration alloc] init];
-    /* 候选极简化（F4，对齐安卓 :1493-1498）：不配 STUN，仅收集 host 候选。
+    /* 候选极简化（对齐安卓）：不配 STUN，仅收集 host 候选。
      * 旧结论"云媒体网关（公网 IP）只能回包到 srflx"被安卓上线实证推翻
      * ——rtpengine（ICE-lite）按收包源地址回包（prflx 学习），host 候选
      * 直发 check 即可达；srflx 在对称 NAT 下本就无效且引入 STUN 依赖的
@@ -2680,7 +2680,7 @@ static void ys_fill_field(char *dst, size_t size, NSString *value)
     }
 }
 
-/* hold 方向语义（RFC 3264 §8.4 单边 hold，安卓 applyTransceiverDirection:971-985）：
+/* hold 方向语义（RFC 3264 §8.4 单边 hold，安卓 applyTransceiverDirection）：
  * hold = 我方 offer sendonly；resume = sendrecv。track.isEnabled 只控
  * 数据发送、不改变 SDP 方向：m 行方向由 transceiver.direction 决定，
  * 不显式设置时 createOffer 恒 sendrecv——hold 对对端完全不可见（实测教训） */
@@ -2701,7 +2701,7 @@ static void ys_fill_field(char *dst, size_t size, NSString *value)
     }
 }
 
-#pragma mark - 呼出链主体（安卓 startOutgoingCall:491-536）
+#pragma mark - 呼出链主体（安卓 startOutgoingCall）
 
 - (void)startOutgoingCall:(SipCallSession *)session
 {
@@ -2775,7 +2775,7 @@ static void ys_fill_field(char *dst, size_t size, NSString *value)
 }
 
 /* localDescription 含全部候选（或看门狗到点带已有候选）→ 发 INVITE
- * （安卓 sendInviteWithLocalSdp:1442-1466） */
+ * （安卓 sendInviteWithLocalSdp） */
 - (void)sendInviteWithLocalSdp:(SipCallSession *)session
 {
     if (session.inviteSent || session.peerConnection == nil || session.isTerminal) {
@@ -2820,7 +2820,7 @@ static void ys_fill_field(char *dst, size_t size, NSString *value)
     [self notifySessionChanged:session];
 }
 
-#pragma mark - offer→answer 链（来电接听与 re-INVITE 共用，安卓 :1475-1564）
+#pragma mark - offer→answer 链（来电接听与 re-INVITE 共用，对齐安卓）
 
 /* SRD(offer) → createAnswer → SLD → answerPending=true → 等 ICE
  * （gathering complete 或看门狗）→ 200（answer 必须携带候选，
@@ -2917,7 +2917,7 @@ static void ys_fill_field(char *dst, size_t size, NSString *value)
     }];
 }
 
-/* 用本地 answer（含已收集候选）发 200（安卓 sendAnswerWithLocalSdp:1546-1564） */
+/* 用本地 answer（含已收集候选）发 200（安卓 sendAnswerWithLocalSdp） */
 - (void)sendAnswerWithLocalSdp:(SipCallSession *)session
 {
     if (session.answerSent || !session.answerPending || session.peerConnection == nil
@@ -3015,7 +3015,7 @@ static void ys_fill_field(char *dst, size_t size, NSString *value)
     }
 }
 
-#pragma mark - hold/resume re-INVITE 链（安卓 renegotiate:1571-1635）
+#pragma mark - hold/resume re-INVITE 链（安卓 renegotiate）
 
 - (void)renegotiate:(SipCallSession *)session
 {
@@ -3075,7 +3075,7 @@ static void ys_fill_field(char *dst, size_t size, NSString *value)
     }];
 }
 
-/* 用本地 offer（含已收集候选）发 re-INVITE（安卓 sendReinviteWithLocalSdp:1617-1635） */
+/* 用本地 offer（含已收集候选）发 re-INVITE（安卓 sendReinviteWithLocalSdp） */
 - (void)sendReinviteWithLocalSdp:(SipCallSession *)session
 {
     if (!session.reinvitePending || session.peerConnection == nil || session.isTerminal) {
@@ -3145,7 +3145,7 @@ static void ys_fill_field(char *dst, size_t size, NSString *value)
     return NO;
 }
 
-#pragma mark - hold/resume（安卓 holdInternal:924-959）
+#pragma mark - hold/resume（安卓 holdInternal）
 
 - (void)holdInternal:(SipCallSession *)session held:(BOOL)held
 {
@@ -3188,7 +3188,7 @@ static void ys_fill_field(char *dst, size_t size, NSString *value)
     [self notifySessionChanged:session];
 }
 
-#pragma mark - ICE gathering 看门狗（每会话独立，主线程，安卓 :1641-1683）
+#pragma mark - ICE gathering 看门狗（每会话独立，主线程，对齐安卓）
 
 - (void)armGatherWatchdog:(SipCallSession *)session
 {
@@ -3199,7 +3199,7 @@ static void ys_fill_field(char *dst, size_t size, NSString *value)
 {
     [self cancelGatherWatchdog:session];
     long long sid = session.sessionId;
-    /* gathering 窗口起点（[webrtc] gather complete 计时，AC-6 呼出延时
+    /* gathering 窗口起点（[webrtc] gather complete 计时，呼出延时
      * 量化点）：仅首轮写入——didGenerateIceCandidate 每候选重挂本方法
      * 不得重置起点。COMPLETE 点读出打日志，看门狗到点/会话释放时清除
      * （见三处消费点） */
@@ -3258,7 +3258,7 @@ static void ys_fill_field(char *dst, size_t size, NSString *value)
     }
 }
 
-#pragma mark - 网络切换恢复（10-20-ios-call-continuity，对齐安卓 :1809-2032）
+#pragma mark - 网络切换恢复（对齐安卓）
 
 /*
  * 链路：SipNetworkMonitor 换网事件（已防抖，主线程）→ ys_handle_ip_change
@@ -3267,7 +3267,7 @@ static void ys_fill_field(char *dst, size_t size, NSString *value)
  * 服务器对新连接的响应慢，等它会把媒体恢复拖到 32s+；注册由 reg watch
  * 兜底）→ 同凭据 re-INVITE（ufrag 不变 + GATHER_CONTINUALLY 持续产出
  * 的新候选，ICE/DTLS 状态延续媒体无缝）→ answer 经现有 handleAnswerSdp
- * 链应用。失败不挂断不重拨（R4：维持无声，ICE FAILED 挂断兜底）。
+ * 链应用。失败不挂断不重拨（维持无声，ICE FAILED 挂断兜底）。
  * 状态字段（netRecoveryRunning / pendingRerun / regWatch 系列 /
  * lastRegStatus）全部仅主线程读写（引擎线程纪律，与安卓主线程
  * Handler 同构）。
@@ -3397,7 +3397,7 @@ static void ys_fill_field(char *dst, size_t size, NSString *value)
  * offer 天然 sendonly）。在途 offer 时跳过本路——对端 offer 若在途，
  * 其 answer 链会自然处理新候选（glare 防护用现有字段）。单路失败
  * （createOffer error / tsx 408/488/491）由 renegotiate 链内失败分支
- * 收尾（reinvitePending=NO），编排不额外挂断——维持无声，R4 语义 */
+ * 收尾（reinvitePending=NO），编排不额外挂断——维持无声 */
 - (void)recoverMediaForSession:(SipCallSession *)session
 {
     if (session.awaitingAnswer || session.reinvitePending) {
@@ -3428,8 +3428,8 @@ static void ys_fill_field(char *dst, size_t size, NSString *value)
     [self startRegWatchIfNeeded];
 }
 
-/* F6 回前台补判入口（SceneDelegate sceneWillEnterForeground → 此处）：
- * 挂起期 NWPathMonitor 事件不送达（iOS 特有缺口 E13），回前台强制刷新
+/* 回前台补判入口（SceneDelegate sceneWillEnterForeground → 此处）：
+ * 挂起期 NWPathMonitor 事件不送达（iOS 特有缺口），回前台强制刷新
  * 快照补判——判定收敛在 SipNetworkMonitor 单点（与主链共用），换网才
  * 走恢复链，幂等 */
 - (void)checkNetworkOnForeground
@@ -3517,7 +3517,7 @@ static void ys_fill_field(char *dst, size_t size, NSString *value)
     _regWatchAttempts = 0;
 }
 
-#pragma mark - 会话终结 / PeerConnection 释放（安卓 :1690-1741）
+#pragma mark - 会话终结 / PeerConnection 释放（对齐安卓）
 
 /* 强制以指定终态结束会话（本地失败路径） */
 - (void)terminateSession:(SipCallSession *)session view:(NSString *)view
@@ -3648,7 +3648,7 @@ static void ys_fill_field(char *dst, size_t size, NSString *value)
             (long)session.callId, (long)newState];
         if (newState == RTCIceGatheringStateComplete) {
             [self cancelGatherWatchdog:session];
-            /* gather 完成耗时（呼出/re-INVITE 链共用此一处完成点；AC-6
+            /* gather 完成耗时（呼出/re-INVITE 链共用此一处完成点；
              * 呼出延时量化——INVITE/200/re-INVITE 提交前最后一个 gather 点，
              * host-only 候选下该点显著提前） */
             NSNumber *startMs = self.gatherStartTimes[@(session.sessionId)];
@@ -3705,7 +3705,7 @@ static void ys_fill_field(char *dst, size_t size, NSString *value)
     });
 }
 
-#pragma mark - 通话质量解析（安卓 parseQuality:733-785 + CallDelegate
+#pragma mark - 通话质量解析（安卓 parseQuality + CallDelegate
 /* getCallQualityJson / qualityBars / networkTypeName） */
 
 - (NSString *)qualityJsonWithReport:(RTCStatisticsReport *)report

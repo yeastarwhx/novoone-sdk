@@ -67,7 +67,7 @@ FOUNDATION_EXPORT NSString * const SipSessionKeyIsOnHold;
 FOUNDATION_EXPORT NSString * const SipSessionKeyCreatedAt;
 FOUNDATION_EXPORT NSString * const SipSessionKeyCallStartTime;
 FOUNDATION_EXPORT NSString * const SipSessionKeyHoldStartTime;
-/* CallKit 会话 UUID（二阶段：来电 report/去电 startCall 绑定；空串=未绑定） */
+/* CallKit 会话 UUID（来电 report/去电 startCall 绑定；空串=未绑定） */
 FOUNDATION_EXPORT NSString * const SipSessionKeyCallKitUuid;
 
 /* 毫秒时间戳（对齐安卓 System.currentTimeMillis 语义） */

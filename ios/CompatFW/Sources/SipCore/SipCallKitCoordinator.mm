@@ -2,7 +2,7 @@
 //  SipCallKitCoordinator.mm
 //  NovoOneApp
 //
-//  CallKit 协作模块实现（detail-design §4.3）。行为基准对齐线上
+//  CallKit 协作模块实现。行为基准对齐线上
 //  NovoSDK_Cx_Delegate：cxCallUpdate 定制（supportsGrouping/Ungrouping=false、
 //  localizedCallerName=displayName、分机 ^[0-9]{1,6}$ → generic handle）。
 //
@@ -12,7 +12,6 @@
 //    CXStartCallAction  → fulfill 后执行呼出块（App 发起）或引擎直呼（记录回拨）
 //    didActivate/Deactivate → engine 音频会话激活线（useManualAudio 模式）
 //
-//  Created for phase-2 task: iOS background call (10-15).
 //
 
 #import "SipCallKitCoordinator.h"
@@ -27,7 +26,7 @@
 
 /* 分机号判定（对齐线上 Softphone_Cx_Delegate 正则） */
 static NSString * const kExtensionPattern = @"^[0-9]{1,6}$";
-/* 推送 report 后 INVITE 未到达的兜底撤销（异常矩阵：服务器丢 INVITE；
+/* 推送 report 后 INVITE 未到达的兜底撤销（服务器丢 INVITE；
  * 绝对上限，含弱网注册重试耗时） */
 static NSTimeInterval const kPendingReportWatchdogSec = 45.0;
 /* 注册 200 后 INVITE 下发窗口：push 唤醒注册后服务器立即下发 pending
@@ -144,7 +143,7 @@ static NSString *CallKitReasonName(SipCallKitEndedReason reason)
     config.maximumCallsPerCallGroup = 1;
     config.supportedHandleTypes = [NSSet setWithObjects:
                                    @(CXHandleTypeGeneric), @(CXHandleTypePhoneNumber), nil];
-    config.includesCallsInRecents = inRecents;   /* 系统通话记录（AC-6 回拨） */
+    config.includesCallsInRecents = inRecents;   /* 系统通话记录（支持系统通话记录回拨） */
     return config;
 }
 
@@ -234,7 +233,7 @@ static NSString *CallKitReasonName(SipCallKitEndedReason reason)
                 [strongSelf removePendingReportForUuid:callUuid];
                 /* 系统卡片不可用：解绑已绑定的会话 uuid，未接听来电重新
                  * 进入 RN 快照（snapshotCalls 按 uuid 绑定过滤），来电屏
-                 * 回退一阶段 RN 弹屏兜底（detail-design 4.3.4 异常矩阵） */
+                 * 回退 RN 弹屏兜底 */
                 [strongSelf.engine onCallKitReportFailedForUuid:callUuid];
                 return;
             }
@@ -389,7 +388,7 @@ static NSString *CallKitReasonName(SipCallKitEndedReason reason)
           uuid.UUIDString, CallKitReasonName(reason), session.callStateView);
 }
 
-/* 终态 → CXCallEndedReason 映射（detail-design 4.3.2 步骤 3，按 iOS 26 SDK
+/* 终态 → CXCallEndedReason 映射（按 iOS 26 SDK
  * 实际枚举值修正：无 Declined——振铃期拒接归 Unanswered，系统通话记录
  * 按未接呈现） */
 - (SipCallKitEndedReason)endedReasonForSession:(SipCallSession *)session
@@ -478,7 +477,7 @@ static NSString *CallKitReasonName(SipCallKitEndedReason reason)
     self.pendingAnswers[action.callUUID] = action;
     [self armAnswerWatchdogForUuid:action.callUUID];
     /* fulfill 延后到引擎 200 发出（onAnswerSentForUuid）——防系统 UI 先行
-     * 显示接通而媒体未立（detail 4.3.2） */
+     * 显示接通而媒体未立 */
     [self.engine callAnswer:callId];
 }
 
@@ -548,7 +547,7 @@ static NSString *CallKitReasonName(SipCallKitEndedReason reason)
         return;
     } else {
         /* 系统通话记录回拨（App 未发起，无 requestId）：引擎直呼 + 事件通知
-         * RN 拉起去电 UI（AC-6） */
+         * RN 拉起去电 UI */
         ckLog(@"start action from recents -> engine dial (number=%@, uuid=%@)",
               number, action.callUUID.UUIDString);
         [self.engine callMake:number requestId:nil callKitUuid:action.callUUID];

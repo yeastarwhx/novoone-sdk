@@ -129,7 +129,10 @@ static const NSUInteger kSipOsLogMaxChars = 1000;
             prefix = [rows[0] substringToIndex:br.location + 1];
         }
         /* 组桶：行保持完整，凑 ≤1000 字符一桶（实测上限 1024，留余量）；
-         * 未达限整条不分片；4KB INVITE 约 5 桶，串行占用 ~0.1s */
+         * 未达限整条不分片；4KB INVITE 约 5 桶，串行占用 ~0.1s。
+         * 已知取舍：单行本身超限（如超长 candidate/URL 行）不跨行拆
+         * （拆行破坏报文可读性与行级前缀语义），os_log 侧截为 <...>，
+         * 文件侧整行原样完整 */
         buckets = [NSMutableArray array];
         NSMutableString *cur = nil;
         for (NSString *row in rows) {

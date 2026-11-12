@@ -166,7 +166,7 @@ typedef NS_ENUM(NSInteger, SipCallPjsuaState) {
 /*
  * 更新服务器下发的编解码配置（登录 codecConfig / MQTT
  * TENANT_CODEC_CONFIG_CHANGED 链路；ID 串为服务器编码体系：
- * 0=PCMU 8=PCMA 9=G722 18=G729 103=OPUS，一期支持除 G729 外
+ * 0=PCMU 8=PCMA 9=G722 18=G729 103=OPUS，支持除 G729 外
  * 四种，G729(18) 解析时静默过滤）。仅影响之后新建的 offer/answer
  * ——下次呼叫（含 re-INVITE）起按当前网络类型（wifi→codecOrder /
  * 蜂窝→codecOrder3G）选表生效，不触发在途通话重协商；nil/空串
@@ -257,7 +257,7 @@ typedef NS_ENUM(NSInteger, SipCallPjsuaState) {
  */
 - (NSArray<NSDictionary *> *)snapshotCalls;
 
-/* ---------------- CallKit 协作面（二阶段新增） ---------------- */
+/* ---------------- CallKit 协作面 ---------------- */
 
 /*
  * 账号是否在册（推送唤醒门面判定：在册 → accountReregister；否则冷启动
@@ -278,7 +278,7 @@ typedef NS_ENUM(NSInteger, SipCallPjsuaState) {
 /*
  * 去电统一入口：CallKit 模式经 CXStartCallAction（action fulfill 后引擎
  * 呼出，8s 未回调直呼兜底）；coordinator 异常未就绪时直呼（单点容
- * 错，等价一阶段 callMake 路径）。
+ * 错，等价 callMake 直呼路径）。
  * RN callMake 与 SceneDelegate 通话记录回拨均经此。主线程调用。
  */
 - (void)startOutgoingCall:(NSString *)number requestId:(nullable NSString *)requestId;
@@ -313,11 +313,11 @@ typedef NS_ENUM(NSInteger, SipCallPjsuaState) {
 
 /* reportNewIncomingCall 失败回挂（coordinator report completion 错误分支）：
  * 解绑会话 uuid，未接听来电重新进入 RN 快照（snapshotCalls 过滤按 uuid
- * 绑定判定）——来电屏回退一阶段 RN 弹屏兜底（detail-design 4.3.4） */
+ * 绑定判定）——来电屏回退 RN 弹屏兜底 */
 - (void)onCallKitReportFailedForUuid:(NSUUID *)uuid;
 
 /*
- * 回前台补网络判定（F6 网络切换通话连续性）：挂起期间 NWPathMonitor
+ * 回前台补网络判定：挂起期间 NWPathMonitor
  * 事件不送达（iOS 特有缺口），SceneDelegate sceneWillEnterForeground
  * 调此补一次 networkKey 判定——网络已变则走恢复编排。判定/防抖收敛在
  * SipNetworkMonitor 单点（与主链共用，恢复幂等）；挂起期 pjsua 线程

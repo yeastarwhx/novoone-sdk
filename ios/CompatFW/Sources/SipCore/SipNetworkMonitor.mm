@@ -92,6 +92,7 @@ static NSString * const kNetTypeOther = @"other";
     _awaitingBaseline = NO;
     _awaitingForegroundCheck = NO;
     _currentKey = nil;
+    _activeIpv4 = nil;  /* 快照随数据源一并作废,防消费方读到陈旧 IP */
 }
 
 - (void)checkNowOnForeground
@@ -103,7 +104,7 @@ static NSString * const kNetTypeOther = @"other";
         /* 基线未建立（start 的首个快照未达）：启动快照即建基线，无需补判 */
         return;
     }
-    /* 挂起期主队列冻结，path 更新可能未送达（E13）：重启数据源强制取
+    /* 挂起期主队列冻结，path 更新可能未送达：重启数据源强制取
      * 当前快照——nw_path_monitor 无同步查询入口，新 monitor 启动即上报
      * 当前 path；首个快照直接走 checkNow 判定（不走防抖窗，一次性补判
      * 无连发合并需求）。挂起期 pjsua 线程同样冻结（无 SIP 活动竞态），
@@ -126,7 +127,11 @@ static NSString * const kNetTypeOther = @"other";
     nw_path_monitor_t monitor = nw_path_monitor_create();
     if (monitor == NULL) {
         /* 创建失败（理论不可达）：无换网检测，恢复链只剩库内被动检测兜底
-         * （对齐安卓 ROM 限制路径的处理） */
+         * （对齐安卓 ROM 限制路径的处理）。分流标志一并复位——否则
+         * awaitingBaseline 悬置会把后续 checkNowOnForeground 挡在早退,
+         * 换网检测永久失效 */
+        _awaitingBaseline = NO;
+        _awaitingForegroundCheck = NO;
         return;
     }
     nw_path_monitor_set_queue(monitor, dispatch_get_main_queue());
@@ -251,7 +256,7 @@ static NSString * const kNetTypeOther = @"other";
             type, ipv4.length > 0 ? ipv4 : @"no-ip"];
 }
 
-/* 活跃接口的 IPv4 本地地址（getifaddrs 按接口名取 v4，P2 定稿形态：
+/* 活跃接口的 IPv4 本地地址（getifaddrs 按接口名取 v4，
  * 接口名来自 path 快照、地址来自系统接口表；按 path 接口序取首个命中；
  * 无 v4 返回 nil） */
 + (nullable NSString *)ipv4OnInterfaces:(NSArray<NSString *> *)ifNames

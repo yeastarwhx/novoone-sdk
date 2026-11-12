@@ -5,9 +5,9 @@
 //  Acrobits Push Token Reporter 的 compat 实现:App 经账户 XML 下发
 //  pushTokenReporter* 节点(占位符模板),SDK 在 token 变化/账户就绪/
 //  注册成功时自动拼请求上报——线上此职责由 Acrobits SDK 内建,App 源码
-//  按此契约接入,compat 必须承担(dev-webrtc 缺口 #1)。
+//  按此契约接入,compat 必须承担(此职责线上由 Acrobits SDK 内建)。
 //
-//  报文契约对齐 E3 实测(dev-webrtc App 层 PushReporter.swift 同源):
+//  报文契约实测对齐 App 层 PushReporter.swift:
 //  token=base64(Data)、selector=40HEX:8HEX 装机一次生成、POST url
 //  2xx 即成功;4xx 不重试,网络/5xx 退避 1s/4s/16s(3 次后等下个触发源)。
 //
@@ -43,6 +43,9 @@ final class CompatPushReporter {
     private var tokenCalls: Data?   // VoIP(usage=IncomingCall)
     private var tokenMsgs: Data?    // APNs(usage=Other)
     private var debouncer: DispatchWorkItem?
+    /// 上报链代数:新触发源/清账户时 +1,在途请求与已排程重试按代数
+    /// 自动作废(防止去抖新链与旧退避链并发双发、换号后旧链续发)
+    private var generation = 0
 
     /// selector 持久化键(40HEX:8HEX,装机一次生成永不重生成;线上 Acrobits
     /// 同形态,服务器按 (username, selector) 唯一索引 UPSERT)
@@ -81,9 +84,12 @@ final class CompatPushReporter {
         }
     }
 
-    /// deleteAccount 时:配置随账户清除(系统 token 保留,下次登录直接可用)
+    /// deleteAccount 时:配置随账户清除(系统 token 保留,下次登录直接可用);
+    /// 在途上报/重试链一并作废(换号后旧账号链不再发)
     func clearAccount() {
         compatMain {
+            generation += 1
+            debouncer?.cancel()
             config = nil
             username = ""
             compatLog("reporter config cleared")
@@ -126,6 +132,7 @@ final class CompatPushReporter {
     // MARK: - 上报主体(1s 去抖合并连发;退避重试)
 
     private func scheduleReport() {
+        generation += 1  // 作废在途重试链,新链接管
         debouncer?.cancel()
         let work = DispatchWorkItem { [weak self] in
             self?.performTokenReport(attempt: 0)
@@ -154,14 +161,19 @@ final class CompatPushReporter {
             request.setValue(value, forHTTPHeaderField: name)
         }
         request.httpBody = Data(body.utf8)
-        compatLog("token POST body=\(body)")
+        let redactedBody = Self.redactedForLog(body, tokens: [
+            tokenCalls?.base64EncodedString() ?? "",
+            tokenMsgs?.base64EncodedString() ?? "",
+        ])
+        compatLog("token POST body=\(redactedBody)")
+        let gen = generation
         URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
             DispatchQueue.main.async {
-                guard let self = self else { return }
+                guard let self = self, self.generation == gen else { return }
                 if let error = error {
                     compatLog("token FAILED (network): \(error.localizedDescription)")
-                    self.retryTokenReport(attempt: attempt)
+                    self.retryTokenReport(attempt: attempt, generation: gen)
                 } else if (200...299).contains(status) {
                     compatLog("token OK (\(status))")
                 } else if (400...499).contains(status) {
@@ -169,13 +181,13 @@ final class CompatPushReporter {
                     compatLog("token FAILED (\(status), no retry): \(Self.responseBodyText(data))")
                 } else {
                     compatLog("token FAILED (\(status)): \(Self.responseBodyText(data))")
-                    self.retryTokenReport(attempt: attempt)
+                    self.retryTokenReport(attempt: attempt, generation: gen)
                 }
             }
         }.resume()
     }
 
-    private func retryTokenReport(attempt: Int) {
+    private func retryTokenReport(attempt: Int, generation gen: Int) {
         guard attempt < Self.retryDelays.count else {
             compatLog("token give up after \(Self.retryDelays.count) retries (wait next trigger)")
             return
@@ -183,13 +195,14 @@ final class CompatPushReporter {
         let delay = Self.retryDelays[attempt]
         compatLog("token retry #\(attempt + 1) after \(Int(delay))s")
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-            self?.performTokenReport(attempt: attempt + 1)
+            guard let self = self, self.generation == gen else { return }
+            self.performTokenReport(attempt: attempt + 1)
         }
     }
 
     // MARK: - 占位符模板与 selector
 
-    /// App 下发模板的占位符集(E3 契约消费面):%account[username]%、
+    /// App 下发模板的占位符集(契约消费面):%account[username]%、
     /// %selector%、%pushTokenIncomingCall%、%pushTokenOther%(token=
     /// base64(Data);未设置上报空串——对齐线上早期上报,服务器清旧 token)
     static func expandTemplate(_ template: String, username: String,
@@ -243,5 +256,15 @@ final class CompatPushReporter {
             return "(no body)"
         }
         return String(text.prefix(200))
+    }
+
+    /// 日志脱敏:推送 token 是设备推送凭据,不落 Sip.log(替换为长度占位)
+    private static func redactedForLog(_ body: String, tokens: [String]) -> String {
+        var redacted = body
+        for token in tokens where !token.isEmpty {
+            redacted = redacted.replacingOccurrences(
+                of: token, with: "<token:\(token.count) chars>")
+        }
+        return redacted
     }
 }

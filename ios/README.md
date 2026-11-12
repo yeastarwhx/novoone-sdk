@@ -1,8 +1,8 @@
-# iOS 双引擎 SDK(novoone-sdk/ios)
+# iOS 双引擎 SDK(novoone-app-sdk/ios)
 
 iOS compat SDK:**NovoSDK 门面**(module `NovoSDK_Swift`、`NovoSDK*` 类名;方法签名形状对齐 Acrobits
-便于 App 迁移)+ **自研 SipWebrtcEngine**。11-03 标识剥离后本地包 `NovoSDKSwiftPackage` 与
-Acrobits 远程包不再同名顶替,双引擎切换由 switch_engine.py 双名字切换承担。
+便于 App 迁移)+ **自研 SipWebrtcEngine**。本地包 `NovoSDKSwiftPackage` 与
+Acrobits 远程包不同名,双引擎切换由 switch_engine.py 双名字切换承担。
 
 ## 目录结构
 
@@ -29,7 +29,8 @@ cd ios && ./build-ios-sdk.sh                 # 增量(复用 Vendor 静态库)
 ./build-ios-sdk.sh --switch-native           # 构建后顺带切 App 工程到自研
 ```
 
-依赖(缺省路径,可用参数覆盖):
+依赖(缺省按 `~/Desktop/novosdk/{仓库名}` 布局,环境变量或参数覆盖:
+`PJ_LIB_SRC` / `WEBRTC_XCFW_SRC` / `APP_IOS_DIR`,及 `--with-webrtc-src` / `--app-ios`):
 
 - pjsip 静态库:`novoone-app-sip/demo/libs/` 下 `*.a`(宏开形态)
 - WebRTC.xcframework:`CompatFW/Vendor/`(已就位则复用,缺省从 webrtc_checkout 拷贝)
@@ -62,16 +63,24 @@ python3 switch_engine.py selftest   # 对 git HEAD 基线跑 native 变换自检
 
 ## App 侧接入(native 形态)
 
-- SPM 包:`NovoSDKSwiftPackage` 解析到 `../../novoone-sdk/ios/NovoSDKCompat`(本地)
+- SPM 包:`NovoSDKSwiftPackage` 解析到 App 仓内 `ios/NovoSDKCompat`(本地包,
+  由构建链 [6/6] 同步入库,不依赖 SDK 源码仓路径)
 - App 源码 NovoSDK 命名:`import NovoSDK_Swift` + `NovoSDK*` 类名(方法签名形状对齐 Acrobits)
 - App 工程编译流程不变(RN/Expo:`npm ci` + `pod install` + xcodebuild)
 - 注意:clone 后首次 `pod install` 需重跑一次以生成 `ios/build/generated/ios`(RN codegen 时序),
   否则 `ReactAppDependencyProvider` 的 CpHeader 报 No such file or directory
 - 注意:更换/重建 `Binaries/` 下 framework 后,若 App 编译报出与旧版 API 相关的
   幻影错误,删除 App 侧预编译 module 缓存后重编:
-  `ios/build/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules/` 与
+  `ios/build/Build/Intermediates.noindex/ExplicitPrecompiledModules/`、
+  `SwiftExplicitPrecompiledModules/`(Xcode 版本新旧名并存)与
   `ios/build/Build/Intermediates.noindex/NovoOneApp.build/`(xcodebuild 会缓存旧
-  swiftmodule/pcm 并复用,不随 SPM 产物自动失效)
+  swiftmodule/pcm 并复用,不随 SPM 产物自动失效;必要时连同
+  `XCBuildData/` 三目录同删)
+- 注意:**双引擎形态切换(26↔126)后首次构建**,除清缓存外还须
+  `xcodebuild -resolvePackageDependencies`(SPM 包图缓存不随 pbxproj 切换刷新,
+  报 `Unable to find module dependency`);**两种形态各用独立 derivedDataPath**
+  (如 `build/claude-dd-26`=Acrobits / `build/claude-dd-native`=自研),共享
+  derivedData 跨形态复用旧编译计划与 shim 残留,清缓存也救不回
 
 ## Acrobits 内建职责的 compat 承担
 
@@ -85,17 +94,35 @@ python3 switch_engine.py selftest   # 对 git HEAD 基线跑 native 变换自检
   重试、网络/5xx 退避 1s/4s/16s;配置未就绪挂起(冷启动 push 唤醒先于
   登录链属正常时序)。日志经 SipCoreLogger 双写落 Sip.log(前缀
   `[compat] [PUSH-REPORT]`)
-- **SIP 密码 Keychain**(`CompatKeychain.swift`,对齐 dev-webrtc 219f069b):
+- **SIP 密码 Keychain**(`CompatKeychain.swift`,对齐线上版行为):
   AccountSnapshot 落盘拆密码进独立 Keychain service(
   kSecAttrAccessibleAlwaysThisDeviceOnly——不进备份/不同步 iCloud/任何
   时刻可读保杀进程唤醒注册),UserDefaults 只存其余注册参数;读取边界拼回,
   Keychain 无密码 = 走无快照路径;登出双清;旧版 plist 明文一次性迁移
-- **push 唤醒头撤除事件驱动**(对齐 dev-webrtc abdf59e4):App 的 3s 盲定时
+- **push 唤醒头撤除事件驱动**(对齐线上版行为):App 的 3s 盲定时
   exclude 落在注册在途/重试窗口时,撤除挂起至注册 200(重试 REGISTER 全程
   带头完成配对),45s 兜底防头永久粘性;新 push 重挂头时取消挂起;已注册
   成功时立即撤(与线上行为一致)
 
-## 已知限制(一期)
+## 与线上(Acrobits)行为差异声明
+
+线上 Acrobits SDK 的部分职责/行为在 compat 方案下形态不同,以下差异为有意设计
+(非缺陷),团队维护时按此口径理解:
+
+- **账户 XML 消费面**:App 登录链下发的账户 XML 节点 30+,compat 消费其中
+  ~15 个(注册参数/pushTokenReporter*/铃声与音量等),其余节点静默忽略
+  (Acrobits 下各有作用)。新增业务节点须先确认 compat 消费面再依赖
+- **NovoSDKPreferences 安慰剂字段**:trafficLogging/echoSuppressionEnabled/
+  volumeBoost*/userAgentOverride 赋值无效(引擎无消费点,见 CompatModels
+  声明);includesCallKitCallsInRecent 真实生效
+- **铃声源**:来电铃声/回铃音为本地合成 WAV(440+480Hz 双音电话频段,
+  `SipRingtoneHelper`),不消费服务器/工程资源文件里的铃声配置(App 无此配置面)
+- **`Vendor/pjsip-include/` 来源**:pjsip 公共头文件快照,拷贝自
+  novoone-app-sip 仓(pjproject 2.17 WebRTC 集成模式),使 CompatFW 开箱
+  可编;更新时从源头仓拷贝对应头文件并保持目录结构,diff 验证
+  (ys_pjsua_app.{h,cpp} 双仓同步约定见文件头)
+
+## 已知限制
 
 - 组激活语义(compat conferences 模型,对齐 Acrobits,App 按钮链依赖):
   - 新会话自动成为活跃组(无显式 setActive 时激活最新非终态组);
@@ -111,11 +138,11 @@ python3 switch_engine.py selftest   # 对 git HEAD 基线跑 native 变换自检
     关不掉;滞留 3.5s(引擎 terminalLinger 1500ms+余量)后清 compat 簿记,终态
     事件对象保留(通话历史经事件流读取不受影响)
 - CallKit 系统界面的 hold(经 SipCallKitCoordinator 直调引擎)不联动组激活状态
-  (与 Acrobits 版结构一致);INVITE 自定义头仅记录不上送(对齐 Android 一期行为)
+  (与 Acrobits 版结构一致)
 
-- INVITE 自定义头仅记录不上送(REGISTER 粘性头表已实装;对齐 Android 一期行为)
+- INVITE 自定义头仅记录不上送(REGISTER 粘性头表已实装;对齐 Android 行为)
 - 来电无 180 时停在 IncomingTrying(canBeAnswered 依赖)
 - caller 字段缺失的 VoIP push 不 report CallKit
 - CallRedirectCapabilities.canForward 恒 false(引擎无 Forward 动作)
 - 三方会议 API(move/split)no-op(单腿组模型);attendedTransfer 走两腿挂断+桥接语义
-- G729 依赖软编解码路径(bcg729 授权是二期议题)
+- G729 依赖软编解码路径(bcg729 授权未落实)

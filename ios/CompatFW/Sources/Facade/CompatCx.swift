@@ -2,8 +2,20 @@
 //  CompatCx.swift
 //  CompatFW
 //
-//  Acrobits 兼容层:NovoSDK_Cx(CallKit 门面,Phase 4 实装)与
-//  CallRedirectionManager(咨询转/盲转状态机,Phase 3 实装)。
+//  Acrobits 兼容层:NovoSDK_Cx(CallKit 门面)与
+//  CallRedirectionManager(咨询转/盲转状态机)。
+//
+//  转接状态机语义(与 Acrobits 的有意差异):perform* 发起后即置终态——
+//  Succeeded 表示"桥接动作已成功发出",不跟踪 REFER/NOTIFY 异步进度
+//  (Acrobits 为 NOTIFY 驱动的 InProgress → 终态状态机)。四张
+//  delegate 表当前无派发点:注册/注销接口保留 Acrobits API 形状,
+//  事件不会送达;若后续需 NOTIFY 驱动的状态流,接线点为引擎侧
+//  ys_call_transfer_state 回调。
+//
+//  形状面口径:NovoSDK_Cx 的 processIntent/reportCall/
+//  updateCallKitConfiguration 等入口为对齐 Acrobits API 形状保留,
+//  当前 App 未消费(引擎 coordinator 内置等价实现或系统行为覆盖),
+//  不按死代码清除。
 //
 
 import Foundation
@@ -326,15 +338,19 @@ import Intents
     public func performBlindTransferToTarget(_ callToBeTransferredTo: NovoSDKCallEvent) {
         guard let source = redirectSource else { return }
         CompatAdapter.shared.blindTransfer(from: source, to: callToBeTransferredTo)
+        /* REFER 已发出即置 Succeeded(发起成功语义,非转接终态)——
+         * NOTIFY 进度不回流,见文件头状态机语义声明 */
         state = CallRedirectState(.Succeeded)
     }
 
     public func performForwardToTarget(_ callToBeTransferredTo: NovoSDKCallEvent) {
-        NSLog("[compat] performForwardToTarget(一期不支持 Forward,引擎无对应动作)")
+        NSLog("[compat] performForwardToTarget(引擎无 Forward 动作,暂不支持)")
     }
 
     public func performAttendedTransfer() {
         guard let source = redirectSource, let target = redirectTarget else { return }
+        /* 返回值 = 两腿桥接动作是否发起成功(挂断+REFER 发出),非转接终态,
+         * 见文件头状态机语义声明 */
         if CompatAdapter.shared.attendedTransfer(source: source, target: target) {
             state = CallRedirectState(.Succeeded)
         } else {

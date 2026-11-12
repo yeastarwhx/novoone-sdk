@@ -3,12 +3,12 @@
 # 用法: ./build-ios-sdk.sh [--rebuild-lib] [--with-webrtc-src <path>] [--switch-native] [--no-sync-app] [--app-ios <dir>]
 #   --switch-native  构建成功后调 switch_engine.py native 切 App 工程到自研引擎
 #   --no-sync-app    跳过 [6/6] App 仓库同步(仅 SDK 仓库本地自验时用)
-#   --app-ios <dir>  App 工程 ios 目录(默认 Mac 同步副本路径)
+#   --app-ios <dir>  App 工程 ios 目录(默认见下方 APP_IOS_DIR)
 #
 # 同步(对齐 Android build-and-sync.sh 模式):
 # Binaries xcframework + Package.swift 同步到 App 仓库
 # ios/NovoSDKCompat 并**入库**——App 团队 clone 即得双引擎切换能力,
-# 无 novoone-sdk 权限依赖。SDK 仓库侧 Binaries 仅为构建缓存(gitignore)。
+# 无 SDK 源码仓权限依赖。SDK 仓库侧 Binaries 仅为构建缓存(gitignore)。
 # switch_engine.py 唯一真源在 App 仓(随仓入库),SDK 仓不保留副本、不分发。
 set -euo pipefail
 
@@ -16,9 +16,13 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 FW_DIR="$HERE/CompatFW"
 VENDOR="$FW_DIR/Vendor"
 BINARIES="$HERE/NovoSDKCompat/Binaries"
-PJ_LIB_SRC_DEFAULT="/Users/lzj/Desktop/novosdk/novoone-app-sip/demo/libs"
-WEBRTC_SRC_DEFAULT="/Users/lzj/Desktop/novosdk/webrtc_checkout/src/out_ios_libs/WebRTC.xcframework"
-APP_IOS_DEFAULT="/Users/lzj/Desktop/novosdk/novoone-app/ios"
+# 依赖路径:默认按团队约定布局 ~/Desktop/novosdk/{仓库名},可用环境变量覆盖
+#   PJ_LIB_SRC       pjsip 静态库目录(novoone-app-sip 仓 demo/libs,宏开形态)
+#   WEBRTC_XCFW_SRC  WebRTC.xcframework 源(webrtc_checkout 构建产物)
+#   APP_IOS_DIR      App 工程 ios 目录(novoone-app 仓)
+PJ_LIB_SRC_DEFAULT="${PJ_LIB_SRC:-$HOME/Desktop/novosdk/novoone-app-sip/demo/libs}"
+WEBRTC_SRC_DEFAULT="${WEBRTC_XCFW_SRC:-$HOME/Desktop/novosdk/webrtc_checkout/src/out_ios_libs/WebRTC.xcframework}"
+APP_IOS_DEFAULT="${APP_IOS_DIR:-$HOME/Desktop/novosdk/novoone-app/ios}"
 
 REBUILD_LIB=0
 WEBRTC_SRC="$WEBRTC_SRC_DEFAULT"
