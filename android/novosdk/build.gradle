@@ -4,8 +4,8 @@ apply plugin: 'com.android.library'
 // 历史：原为 Acrobits 兼容门面（包名/类名与 Acrobits 一致，11-03 标识
 // 剥离改造迁移至自有命名空间，类名/方法签名不变，行为对齐 Acrobits 的
 // 语义参考系保留见各注释）。内部转发到 :sip-core（SipWebrtcEngine）。
-// 宿主 App 只需替换一行依赖即可切换引擎（26 形态经 acrobits-adapter
-// 提供同名 API）。
+// 宿主 App 切换引擎时替换一行依赖即可（26 形态走 App 仓内 acrobitsBridge
+// 直连 cz.acrobits Maven 真身，不经本仓库）。
 
 android {
     namespace 'com.novosdk'

@@ -9,19 +9,9 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        // Acrobits Maven（acrobits-adapter 的 compileOnly 真身；凭证在
-        // 本仓库 gradle.properties——与 novoone-app 仓库同模式）
-        maven {
-            url "https://maven.acrobits.net/repository/maven-releases/"
-            credentials {
-                username acrobits_saas_package
-                password acrobits_saas_key
-            }
-        }
     }
 }
 rootProject.name = "novoone-sdk"
 include ':novosdk'
-include ':acrobits-adapter'
 include ':sip-core'
 include ':libs:webrtc'

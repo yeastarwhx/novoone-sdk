@@ -9,12 +9,11 @@ APP_DIR="${1:-/home/work/novoone-app/android}"
 
 echo "=== 构建 AAR ==="
 cd "$SDK_ANDROID_DIR"
-./gradlew :novosdk:assembleRelease :acrobits-adapter:assembleRelease :sip-core:assembleRelease --console=plain
+./gradlew :novosdk:assembleRelease :sip-core:assembleRelease --console=plain
 
 echo "=== 同步到 App ==="
 cp novosdk/build/outputs/aar/novosdk-release.aar "$APP_DIR/libs/"
 cp sip-core/build/outputs/aar/sip-core-release.aar "$APP_DIR/libs/"
-cp acrobits-adapter/build/outputs/aar/acrobits-adapter-release.aar "$APP_DIR/libs/"
 cp libs/libwebrtc-arm64-v8a.aar "$APP_DIR/libs/"
 
 echo "=== 完成 ==="
