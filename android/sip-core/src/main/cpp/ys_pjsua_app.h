@@ -230,9 +230,6 @@ int ys_set_outgoing_invite_headers(const char *headers);
 int ys_set_register_headers(const char *headers);
 
 /*
- * 用 WebRTC 生成的新 offer SDP 发起 re-INVITE（hold/resume）。
- */
-/*
  * 用新 SDP 发 re-INVITE（hold/resume、网络切换媒体重建共用出口）。
  * headers 为附加自定义头（"Name: Value\n" 多行，如 X-REQUEST-ID 沿用与
  * X-NetworkChanged 换网标志；NULL/空 = 无附加）。解析失败按无附加头
