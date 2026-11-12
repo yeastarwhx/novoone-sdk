@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""iOS 双引擎切换(终态版):App 工程 pbxproj 的 SPM 包引用切换。
+"""iOS 双引擎切换:App 工程 pbxproj 的 SPM 包引用切换。
 
 用法:
   switch_engine.py native [app_ios_dir]    # 切自研(126.x):Acrobits saas 远程包 -> 本地 NovoSDKCompat
@@ -7,14 +7,15 @@
   switch_engine.py status [app_ios_dir]    # 当前引擎 / 版本 / pbxproj git 状态
   switch_engine.py selftest [app_ios_dir]  # 对该工程 git HEAD 基线跑 native 变换自检(只读不写)
 
-app_ios_dir 缺省 = 根目录调试工程(DEFAULT_APP_IOS);任意 novoone-app 仓库的
-ios 目录(含 NovoOneApp.xcodeproj)均可传入,relativePath 按两工程实际位置计算。
+app_ios_dir 缺省 = 本脚本所在的 ios 目录(脚本随仓库入库,__file__ 即
+clone 位置,缺省永远作用于脚本所属仓库,跨机器无绝对路径依赖);其他
+novoone-app 仓库可显式传入其 ios 目录,relativePath 按实际位置计算。
 
-边界(任务决策):
+设计边界:
 - 仅操作 NovoOneApp target:saas 包引用 + 该 target 两个 config 的
   MARKETING_VERSION;OEM(saas-video 包/target)不动——pbxproj 内 OEM 是
   独立包引用与独立 target,变换正则均精确锚定 saas(非 saas-video)。
-- 双版本打包联动(11-02-dual-version-packaging):native 方向同时 bump
+- 双版本打包联动:native 方向同时 bump
   NovoOneApp/Supporting/Expo.plist 的 EXUpdatesRuntimeVersion(26.x ->
   126.x)——runtimeVersion 是 expo-updates OTA 通道隔离键,自研形态走独立
   126.x 通道(26.x 线上通道不受影响);该文件与 pbxproj 同模式随 acrobits
@@ -23,7 +24,7 @@ ios 目录(含 NovoOneApp.xcodeproj)均可传入,relativePath 按两工程实际
 - acrobits 方向不做文本逆变换:xcodebuild -list/build 会规范化重写 pbxproj
   (包引用拆 section、注释名/URL 大小写改写、relativePath 加引号),逆变换
   正则在新格式上必然失配,故直接 git restore 回 HEAD 基线。
-- 双名字切换(11-03 标识剥离,2026-11-04):本地包 NovoSDKSwiftPackage 与
+- 双名字切换:本地包 NovoSDKSwiftPackage 与
   Acrobits 远程包不再同名顶替——native 变换在包引用之外同步替换
   productDependency 的 productName 与注释名,App 侧 productName 引用
   由脚本一并变换(同名红利废弃后这是双形态编译一致性的必要条件)。
@@ -40,7 +41,6 @@ import subprocess
 import sys
 import pathlib
 
-DEFAULT_APP_IOS = "/Users/lzj/Desktop/novosdk/novoone-app/ios"
 APP_MAIN_TARGET = "NovoOneApp"
 GIT_PATHSPEC = "NovoOneApp.xcodeproj/project.pbxproj"
 
@@ -246,7 +246,7 @@ def bump_expo_runtime_version(text: str) -> tuple:
 def transform_to_native(app: AppProject, text: str) -> tuple:
     """Acrobits 基线 -> native 形态;返回 (新文本, 摘要行列表)。
     Expo.plist(存在时)在函数外单独 bump(native 分支主体处理)。
-    双名字切换(11-03):包引用块之外,productDependency 的 productName 与
+    双名字切换:包引用块之外,productDependency 的 productName 与
     各处注释名一并 SoftphoneSwiftPackage-saas -> NovoSDKSwiftPackage"""
     notes = []
     if not REMOTE_BLOCK_RE.search(text):
@@ -347,7 +347,10 @@ def main() -> None:
     # 先校验 mode 再碰工程:--help/拼错子命令不该被缺省工程缺失误导
     if mode not in ("status", "selftest", "native", "acrobits"):
         raise SystemExit(__doc__)
-    app = AppProject(sys.argv[2] if len(sys.argv) > 2 else DEFAULT_APP_IOS)
+    # 缺省 = 脚本所在 ios 目录(脚本入库于目标工程,跨机器无绝对路径)
+    app = AppProject(
+        sys.argv[2] if len(sys.argv) > 2
+        else str(pathlib.Path(__file__).resolve().parent))
     if mode == "status":
         print_status(app)
         return

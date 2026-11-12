@@ -8,7 +8,7 @@
 //  App 内无 import 的 Swift 文件(NovoEngine 的 UN* 本地通知等)依赖 SDK
 //  module 链把 UIKit(及其可见的 UserNotifications 类型)带入可见域。
 //  本头经 modulemap 列入 module(underlying),Acrobits 同构机制;
-//  实测:`import UIKit` ⇒ UN* 类型可见(SDK 26.2)。
+//  `import UIKit` ⇒ UN* 类型可见(SDK 26.2)。
 //
 
 #import <UIKit/UIKit.h>

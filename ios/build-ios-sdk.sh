@@ -5,7 +5,7 @@
 #   --no-sync-app    跳过 [6/6] App 仓库同步(仅 SDK 仓库本地自验时用)
 #   --app-ios <dir>  App 工程 ios 目录(默认 Mac 同步副本路径)
 #
-# 同步(方案 A,2026-11-02 定,对齐 Android build-and-sync.sh 模式):
+# 同步(对齐 Android build-and-sync.sh 模式):
 # Binaries xcframework + Package.swift + switch_engine.py 同步到 App 仓库
 # ios/NovoSDKCompat 并**入库**——App 团队 clone 即得双引擎切换能力,
 # 无 novoone-sdk 权限依赖。SDK 仓库侧 Binaries 仅为构建缓存(gitignore)。
@@ -118,7 +118,7 @@ fi
 
 if [[ "$SWITCH_NATIVE" == 1 ]]; then
   echo "==> --switch-native: 切换 App 工程"
-  # 方案 A:切换优先用 App 侧脚本副本(SDK_COMPAT 自适应 -> App 本地
+  # 切换优先用 App 侧脚本副本(SDK_COMPAT 自适应 -> App 本地
   # NovoSDKCompat 引用);未同步过(如 --no-sync-app)回落 SDK 侧副本
   # (引用 SDK 仓库路径,仅 Mac 本机调试形态)
   if [[ -f "$APP_IOS/switch_engine.py" ]]; then
