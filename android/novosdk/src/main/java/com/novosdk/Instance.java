@@ -466,8 +466,8 @@ public final class Instance {
                         snap.pushTokenReporterCustomHeaders);
             }
             /* 服务器编解码配置节点回写（防丢）：modifyAccount 的 clone 链
-             * 不回写 = 后续任何参数变更把 codec 配置抹掉（iOS
-             * CompatAdapter.swift:367 同防）。空值不写树——与上方注册
+             * 不回写 = 后续任何参数变更把 codec 配置抹掉（iOS 侧
+             * CompatAdapter 的 getAccount 同防）。空值不写树——与上方注册
              * 字段同形态 */
             if (snap.codecOrder != null && !snap.codecOrder.isEmpty()) {
                 xml.setChildValue("codecOrder", snap.codecOrder);

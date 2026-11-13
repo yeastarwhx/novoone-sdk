@@ -16,6 +16,10 @@
  *     收到 ys_call_answer_sdp / ys_incoming_call_sdp 后交给 WebRTC
  *     setRemoteDescription。
  *
+ * 双仓同步约定：pjsip 源码仓（pjsip-apps/src/pjsua/ys_pjsua_app.{h,cpp}）
+ * 为源头，本目录副本随其同步——任一侧修改后必须同步另一侧，diff
+ * 逐字节一致。
+ *
  * Threading: 回调在 pjsua 内部线程触发，上层自行切换到 UI 线程。
  */
 
@@ -49,13 +53,13 @@ typedef enum ys_pjsip_inv_state
  *   直连架构：reg_uri 填服务器地址即可，proxy_uri 留空，
  *     所有请求直发服务器；
  *   Outbound Proxy 架构（如 novo-one 云平台）：reg_uri 填 Server Host
- *     域（如 "wangjf1:5060"，仅作 SIP 域标识，无需可解析），
- *     proxy_uri 填代理地址（如 "sip.cn-1.dev.novo-one.com:5060"），
+ *     域（如 "sip.example.com:5060"，仅作 SIP 域标识，无需可解析），
+ *     proxy_uri 填代理地址（如 "proxy.example.com:5060"），
  *     REGISTER/INVITE 等所有请求经代理转发（自动生成 Route 头）。
  */
 typedef struct ys_acc_registerinfo
 {
-	char reg_uri[64];			/* 服务器/域 "host[:port]"，如 "10.10.21.101" 或 "wangjf1:5060" */
+	char reg_uri[64];			/* 服务器/域 "host[:port]"，如 "10.0.0.1" 或 "sip.example.com:5060" */
 	char realm[64];				/* 认证域，"*" 表示任意 */
 	char username[64];			/* 分机号（SIP 账号 id 与 From user） */
 	char auth_username[64];		/* 独立认证用户名，留空 = 用 username */
@@ -132,10 +136,10 @@ int ys_destroy_pjsua(void);
  * 设置 SIP 传输层：0=UDP（默认） 1=TCP 2=TLS。
  * 须在 ys_init_pjsua 之前调用；影响 transport 创建与 proxy Route 头
  * 的 ;transport= 参数。TCP/TLS 本地绑定随机端口（对齐常见客户端行为，
- * 云代理沿连接原路回包）。TLS 须库以 PJ_HAS_SSL_SOCK=1 编译交付，
- * 本地固定 5061（服务端 TLS 常规端口；客户端到 proxy 的 5061），
- * 证书校验关闭（对齐旧栈 provisioning verifyCerts=0：服务器 Contact
- * 直连 IP 场景校验必败）。
+ * 云代理沿连接原路回包；服务端 TLS 端口 5061 由 proxy_uri 携带）。
+ * TLS 须库以 PJ_HAS_SSL_SOCK=1 编译交付，证书校验关闭
+ * （对齐旧栈 provisioning verifyCerts=0：服务器 Contact 直连 IP
+ * 场景校验必败）。
  */
 int ys_set_sip_transport(int transport);
 

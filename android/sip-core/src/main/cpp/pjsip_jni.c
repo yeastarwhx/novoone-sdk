@@ -1,21 +1,14 @@
 /*
- * pjsip_jni.c - ys_pjsua_app (C) <-> JniBridge (Java) 桥
+ * pjsip_jni.c - ys_pjsua_app (C) <-> JniBridge (Java) 桥（:sip-core）
  *
- * novoone-app :sip-core（移植自 novoone-sip-demo/app/src/main/cpp/pjsip_jni.c）：
- *   - 12 个 native 入口 1:1 对齐 ys_pjsua_app.h API；
- *   - 6 个 ys_* 回调在 pjsua worker 线程触发，AttachCurrentThread 后
+ *   - native 入口 1:1 对齐 ys_pjsua_app.h API；
+ *   - ys_* 回调在 pjsua worker 线程触发，AttachCurrentThread 后
  *     调 JniBridge.onXxx 静态方法（Java 侧再切主线程收敛状态）；
  *   - jclass/jmethodID 在首个 native 调用时缓存（pjlib 自带
  *     JNI_OnLoad，本模块不能再定义一个；回调线程 FindClass 会因
- *     classloader 上下文缺失而失败，禁止在回调里 FindClass）。
- *
- * 相对 demo 版差异：
- *   - 包名 com.novoone.sipdemo -> com.yeastar.sipcore；
- *   - ys_incoming_call_sdp 回调追加 request_id / caller_id_name 两个
- *     INVITE 头参数（仅回调期间有效，Java 侧立即留存）；
- *   - 新增 nativeRejectCall（486 拒接）/ nativeSetOutgoingInviteHeaders
- *     （呼出 INVITE 附加头，一次性消费）；
- *   - 新增 nativeUnregisterAccount（登出注销）。
+ *     classloader 上下文缺失而失败，禁止在回调里 FindClass）；
+ *   - ys_incoming_call_sdp 回调携带 request_id / caller_id_name 两个
+ *     INVITE 头参数（C 侧经 NewStringUTF 拷入 Java String，无生命周期问题）.
  *
  * 风格对齐仓库约定：C89 变量声明块首、4 空格缩进、K&R 大括号。
  */
@@ -24,6 +17,8 @@
 #include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
+
+#include <android/log.h>
 
 #include "ys_pjsua_app.h"
 
@@ -362,7 +357,9 @@ static void ys_cb_ip_change_progress(int step, int status)
 /* Java native 入口                                                    */
 /* ------------------------------------------------------------------ */
 
-/* String -> C 缓冲（str 为 NULL/空时返回 -1） */
+/* String -> C 缓冲（str 为 NULL/空时返回 -1）。入参超长截断时告警：
+ * 静默截断会让注册带着残缺凭据/地址发出且日志无线索（库层
+ * YS_SNPF_CHK 只能防 ys_register_account 内部组装侧的截断） */
 static int copy_jstring(JNIEnv *env, jstring js, char *dst, int dst_size)
 {
     const char *cs;
@@ -376,8 +373,12 @@ static int copy_jstring(JNIEnv *env, jstring js, char *dst, int dst_size)
         return -1;
 
     n = (int)strlen(cs);
-    if (n > dst_size - 1)
+    if (n > dst_size - 1) {
+        __android_log_print(ANDROID_LOG_WARN, "pjsip_jni",
+                            "copy_jstring: input %d chars truncated to %d",
+                            n, dst_size - 1);
         n = dst_size - 1;
+    }
     memcpy(dst, cs, (size_t)n);
     dst[n] = '\0';
 

@@ -4,7 +4,7 @@ package com.novosdk.ali;
  * SDK 侧日志器（NovoSDK softphone API 层）。
  *
  * App 用法：new Log(Class) / new Log("tag") + info / warning / error。
- * 内部落 android logcat（tag 前缀 Acrobits，防与 App 日志混淆）。
+ * 内部落 android logcat（tag 前缀 Novosdk，防与 App 日志混淆）。
  * SDK 全局日志缓冲/自定义 Sink 走 {@code Instance.Log}（LogModule），与本类无关。
  */
 public class Log {

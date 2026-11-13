@@ -1,11 +1,19 @@
 #!/bin/bash
 # Android SDK 构建并同步 AAR 到 novoone-app（与 ios/build-ios-sdk.sh 对称）
-# 用法: cd /home/work/novoone-sdk/android && ./build-and-sync.sh [APP_PATH]
+# 用法: ./build-and-sync.sh [APP_ANDROID_DIR]
+#   APP_ANDROID_DIR 也可经环境变量提供；缺省 ~/novoone-app/android，
+#   不存在时提示（团队各自 clone 路径不同，不做个人路径假设）。
 
 set -e
 
 SDK_ANDROID_DIR="$(cd "$(dirname "$0")" && pwd)"
-APP_DIR="${1:-/home/work/novoone-app/android}"
+APP_DIR="${1:-${APP_ANDROID_DIR:-$HOME/novoone-app/android}}"
+
+if [ ! -d "$APP_DIR" ]; then
+    echo "错误: App 工程 Android 目录不存在: $APP_DIR" >&2
+    echo "用法: ./build-and-sync.sh [APP_ANDROID_DIR]  (或 export APP_ANDROID_DIR=...)" >&2
+    exit 1
+fi
 
 echo "=== 构建 AAR ==="
 cd "$SDK_ANDROID_DIR"

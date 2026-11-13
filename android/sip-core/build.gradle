@@ -1,8 +1,8 @@
 apply plugin: 'com.android.library'
 
 // :sip-core — novoone 自研 SIP/WebRTC 引擎库模块
-//（移植自 novoone-sip-demo，结构性改造：多通话会话化 + 手动接听，见
-//  .trellis/tasks/09-10-android-acrobits-to-pjsip/arch-design.md §3）
+//（多通话会话化 + 来电手动接听：会话经 CallSessionRegistry 管理，
+//  呼出/来电均先建 PeerConnection 缓存 SDP，再走 ys_* 信令提交）
 
 android {
     namespace 'com.yeastar.sipcore'
@@ -40,30 +40,23 @@ android {
 }
 
 // ------------------------------------------------------------------ //
-// 本地 WebRTC aar（org.webrtc，jni_zero 编译产物，仅 arm64-v8a）
+// WebRTC 编译期类引用：aar 与字节码补丁脚本均收敛至 :libs:webrtc 模块
+// （android/libs/libwebrtc-arm64-v8a.aar 单一副本）。本模块仅从其补丁后
+// 产物抽取 classes.jar 作 compileOnly classpath。
 //
-// 两个约束与本模块的处理（补丁逻辑移植自 demo libs/webrtc/build.gradle）：
+// 两个约束与处理（补丁逻辑在 libs/webrtc/build.gradle）：
 //  1. aar 的 classes.jar 为 JDK 25 字节码（v69），本机 JDK 17 javac 读不了
 //     -> patchAarBytecodeVersion：构建期原位改写 class 头版本字节（仅版本
 //     字段，不重序列化、内容零改动），v<=61 原样透传；
 //  2. AGP 不支持 library 模块直接依赖本地 .aar 文件（assembleDebug 报
 //     "Direct local .aar file dependencies are not supported when building
-//     an AAR"），且 files(目录) 不进 AGP 的 compile classpath（实测）
+//     an AAR"），且 files(目录) 不进 AGP 的 compile classpath
 //     -> extractWebrtcClasses：从补丁后 aar 抽出 classes.jar 成独立 jar，
-//     compileOnly files(jar) 引用（jar 文件依赖实测可进 classpath）。
+//     compileOnly files(jar) 引用（jar 文件依赖可进 classpath）。
 //
-// 已知边界（Step 3/4 处理）：compileOnly 不传递 —— 宿主 App 运行期需要
-// org.webrtc 类与 libjingle_peerconnection_so.so，届时在 App 侧引入同一
-// aar（如恢复 demo 的 libs:webrtc 包装模块做法）。
-// 换新 aar 直接覆盖 libs/libwebrtc-arm64-v8a.aar 即可，无需其他改动。
-// ------------------------------------------------------------------ //
-
-// ------------------------------------------------------------------ //
-// WebRTC 编译期类引用（2026-09-15 收敛）：aar 与补丁脚本均收敛至
-// :libs:webrtc 模块（android/libs/libwebrtc-arm64-v8a.aar 单一副本 +
-// patchAarBytecodeVersion 字节码降级）。本模块仅从其补丁后产物抽取
-// classes.jar 作 compileOnly classpath（AGP 不支持 library 直接依赖
-// 本地 aar；runtime 由宿主 App implementation :libs:webrtc 提供）。
+// 已知边界：compileOnly 不传递——宿主 App 运行期需要 org.webrtc 类与
+// libjingle_peerconnection_so.so，由 App 侧 implementation :libs:webrtc
+// 提供同一 aar。
 // 换新 aar 只需覆盖 android/libs/libwebrtc-arm64-v8a.aar 一处。
 // ------------------------------------------------------------------ //
 

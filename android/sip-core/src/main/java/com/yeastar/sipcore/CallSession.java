@@ -5,14 +5,14 @@ import org.webrtc.AudioTrack;
 import org.webrtc.PeerConnection;
 
 /**
- * 单路通话会话：demo 版 SipWebrtcEngine 的单通话引擎字段全部下沉至此
- * （会话化改造，见 arch-design §3.3.1）。
+ * 单路通话会话：引擎的单通话字段（PeerConnection/track/offer-answer
+ * 状态机等）全部下沉至此，按会话隔离管理。
  *
  * 线程模型：所有字段仅在主线程读写（引擎 Handler 收敛 + Registry 同为
  * 主线程对象），因此用公开可变字段而非同步访问器——delegate 层同样
  * 必须在主线程读取（快照消费方经 SdkThreadExecutor.executeOnMain）。
  *
- * 视图状态（callStateView，detail-design §2.1 映射，由引擎写入）：
+ * 视图状态（callStateView，由引擎按 computeViewState 映射写入）：
  *   呼出：Trying → Ringing → Established → Terminated/Busy/Error/Unauthorized
  *   来电：IncomingTrying → IncomingRinging →（接听）IncomingAnswered
  *                                        →（拒接）IncomingRejected
@@ -65,7 +65,7 @@ public class CallSession {
     public int pjsuaState;
     /** 最后 SIP 响应码（180/200/486/...） */
     public int lastStatus;
-    /** 视图状态（STATE_*，引擎按 detail-design §2.1 写入） */
+    /** 视图状态（STATE_*，引擎按 computeViewState 映射写入） */
     public String callStateView = STATE_TRYING;
 
     /* ---------------- hold / mute ---------------- */
@@ -89,7 +89,7 @@ public class CallSession {
     public AudioSource audioSource;
     public AudioTrack audioTrack;
 
-    /* ---------------- offer/answer 状态机（demo ivar 下沉） ---------------- */
+    /* ---------------- offer/answer 状态机 ---------------- */
     /** caller: INVITE already sent */
     public boolean inviteSent;
     /** callee/re-INVITE: 本地 answer 已 set，等 ICE 候选发 200 */
@@ -139,7 +139,7 @@ public class CallSession {
         return direction == DIRECTION_IN;
     }
 
-    /** canBeAnswered 契约：IncomingRinging 且尚未接听/超时（§2.2） */
+    /** canBeAnswered 契约：IncomingRinging 且尚未接听/offer 已缓存 */
     public boolean canBeAnswered() {
         return isIncoming()
                 && STATE_INCOMING_RINGING.equals(callStateView)
@@ -147,7 +147,7 @@ public class CallSession {
                 && offerSdp != null;
     }
 
-    /** isOnHold 契约（§2.2）：本端或对端 hold 均置位（视图展示语义） */
+    /** isOnHold 契约：本端或对端 hold 均置位（视图展示语义） */
     public boolean isOnHold() {
         return holdFlag || remoteHoldFlag;
     }

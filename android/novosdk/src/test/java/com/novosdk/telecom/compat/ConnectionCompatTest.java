@@ -11,7 +11,7 @@ import java.util.Collection;
 
 /**
  * pickLevel 分档边界表驱动（分档错配 = 低版本设备 NoSuchMethodError
- * 崩溃级风险，connectionfactory-sinkdown 下沉后的等价性验收）。
+ * 崩溃级风险，分档判断为全工程单一来源，此处锚定边界不回退）。
  *
  * 档位边界（Build.VERSION_CODES 常量编译期内联，纯 JVM 可测）：
  * - LEVEL_API23：< 26（模块 minSdk 26，此档为形状对齐保留）

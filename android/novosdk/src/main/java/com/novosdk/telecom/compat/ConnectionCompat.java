@@ -44,18 +44,14 @@ public final class ConnectionCompat {
         }
     }
 
-    /** 按系统版本创建对应层级的 Connection 子类 */
+    /**
+     * 按系统版本创建对应层级的 Connection 子类。委托
+     * {@link NovoConnectionFactory#create}（全工程唯一实例化 switch——
+     * 创建的连接统一带 onSilence 拦截链：App 注册钩子时走钩子，
+     * 未注册回退 SDK 默认停铃声，与 App 直连工厂的连接行为一致）。
+     */
     public static Connection createConnection(CallEvent callEvent, boolean selfManaged) {
-        switch (pickLevel(Build.VERSION.SDK_INT)) {
-            case LEVEL_API35:
-                return new ConnectionImplApi35(callEvent, selfManaged);
-            case LEVEL_API34:
-                return new ConnectionImplApi34(callEvent, selfManaged);
-            case LEVEL_API26:
-                return new ConnectionImplApi26(callEvent, selfManaged);
-            default:
-                return new ConnectionImplApi23(callEvent);
-        }
+        return NovoConnectionFactory.create(callEvent, selfManaged);
     }
 
 

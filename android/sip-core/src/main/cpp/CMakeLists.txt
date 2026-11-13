@@ -1,13 +1,11 @@
-# pjsip_jni - ys_pjsua_app (C) <-> Java 桥模块（novoone-app :sip-core）
+# pjsip_jni - ys_pjsua_app (C) <-> Java 桥模块（:sip-core）
 #
 # 静态链入 Makefile.copy 交付的 17 个 pjsip arm64 静态库
 # （WebRTC 集成模式，宏开），与本模块的 JNI 入口 + ys_pjsua_app.cpp
 # 信令封装打包成单个 libpjsip_jni.so。不链 pjsua2 / audiodev /
 # videodev / pjsdp（未被引用的对象由链接器自动裁剪）。
 #
-# 移植自 novoone-sip-demo/app/src/main/cpp/CMakeLists.txt，差异：
-#   - 交付目录相对路径由 demo 根（4 级）改为 sip-core 模块根（3 级）
-#   - 其余（依赖序 / 编译宏 / 链接库）保持一致
+# 交付目录（pjsip-android/）位于 sip-core 模块根（cpp 起 3 级上溯）
 
 cmake_minimum_required(VERSION 3.22)
 project(pjsip_jni LANGUAGES C CXX)

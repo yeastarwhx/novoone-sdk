@@ -74,7 +74,7 @@ public class AndroidUtil {
         }
     }
 
-    /** 打开 assets 资源流（调用方负责关闭） */
+    /** 打开 assets 资源流；直接消费方 Xml.parse 自带关闭，其余调用方负责关闭 */
     public static InputStream getAsset(String name) {
         try {
             return requireApp("getAsset").getAssets().open(name);
@@ -83,7 +83,11 @@ public class AndroidUtil {
         }
     }
 
-    /** 主线程执行（已在主线程则同步执行） */
+    /**
+     * 主线程执行（已在主线程则同步执行）。与 Acrobits 原版同名但语义
+     * 弱化：本实现为异步投递（fire-and-forget），不等待主线程执行
+     * 完成返回——后台线程调用后不得立即依赖 runnable 的执行结果。
+     */
     public static void rendezvous(Runnable r) {
         if (Looper.myLooper() == Looper.getMainLooper()) {
             r.run();

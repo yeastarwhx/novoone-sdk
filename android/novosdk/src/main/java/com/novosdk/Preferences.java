@@ -16,10 +16,12 @@ public class Preferences {
 
     /**
      * 单项偏好：set 写入（立即生效或记录），get 读取当前值。
+     * set 可来自 App 任意线程、get 在引擎线程读取，mValue 用 volatile
+     * 保证跨线程可见性（与 SDK 各模块的线程纪律一致）。
      */
     public static class Preference<T> {
 
-        private T mValue;
+        private volatile T mValue;
 
         public void set(T value) {
             mValue = value;

@@ -19,6 +19,10 @@ public class AccountXml {
 
     private boolean mEnabled = true;
 
+    /**
+     * @param attributes 仅形态参数（对齐 Acrobits 构造签名），值合并
+     *                   语义由 {@link #mergeValue} 覆写承担，本构造不使用
+     */
     public AccountXml(Xml xml, MergeableNodeAttributes attributes) {
         this.xml = xml != null ? xml : new Xml("account");
     }

@@ -70,10 +70,13 @@ public class Listeners {
         void onRegistrationStateChanged(String accountId, RegistrationState state);
     }
 
+    /** 推送测试到达（形状面保留：本引擎无推送测试机制，永不回调；
+     *  26 形态由 Acrobits 触发，App 双形态接口对齐） */
     public interface OnPushTestArrived {
         void onPushTestArrived(String accountId);
     }
 
+    /** 推送测试计划结果（形状面保留：本引擎无推送测试机制，永不回调） */
     public interface OnPushTestScheduled {
         void onPushTestScheduled(String accountId, PushTestScheduleResult result);
     }

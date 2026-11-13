@@ -6,8 +6,11 @@ import android.database.Cursor;
 import android.net.Uri;
 
 /**
- * 启动期 ContentProvider（Manifest 声明自动实例化，NovoSDK 生命周期钩子）。
- * 原 SDK 用于在 Application.onCreate 前初始化生命周期跟踪。
+ * 启动期 ContentProvider（形状面保留：由宿主 App Manifest 经
+ * manifestPlaceholders 声明（自研形态 authorities
+ * "${applicationId}.novosdk.lifecycle"），本 SDK 模块 manifest 不声明。
+ * 生命周期跟踪实际经 Instance.init → LifecycleTracker.install 装配，
+ * 本类 onCreate 为空实现，仅类名是宿主 Manifest 的编译契约，不可删。
  */
 public class LifecycleTrackerInitializer extends ContentProvider {
     @Override

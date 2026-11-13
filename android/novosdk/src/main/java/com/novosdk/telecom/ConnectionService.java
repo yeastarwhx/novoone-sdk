@@ -43,7 +43,10 @@ public abstract class ConnectionService extends android.telecom.ConnectionServic
                 + request.getExtras());
         /* App 层的 createIncomingConnectionInternal 可能已先经反射消费了
          * pending 槽（extractWaitingCall），此处不依赖槽——直接从 extras
-         * eventId 查找会话构造事件（不消费槽） */
+         * eventId 查找会话构造事件（不消费槽）。本快速路径不做
+         * 满员检查（下方兜底路径有）：能走到这里说明上报链已放行，
+         * 而引擎侧 MAX_SESSIONS（2）先于 Telecom 上限（5）拦截，
+         * 不会超限 */
         long eventId = request.getExtras() != null
                 ? request.getExtras().getLong(
                     SdkBridge.EXTRA_EVENT_ID, -1) : -1;
@@ -55,7 +58,8 @@ public abstract class ConnectionService extends android.telecom.ConnectionServic
                         .ConnectionCompat.createConnection(event, true);
                 com.novosdk.telecom.compat.ConnectionCompat
                         .audioRouting(connection).setAudioRoutingCallback(this);
-                /* 存入连接表（BT 挂断/路由协同的核心） */
+                /* 连接表登记（BT 挂断/路由协同的核心；构造器内已登记，
+                 * 同键 put 幂等——此处显式调用仅作时序强调） */
                 SdkBridge.get().registerTelecomConnection(eventId, connection);
                 android.util.Log.i(TAG, "Connection created for eventId=" + eventId);
                 return connection;

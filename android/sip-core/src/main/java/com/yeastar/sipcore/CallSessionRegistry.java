@@ -6,14 +6,14 @@ import java.util.LinkedHashMap;
 import java.util.List;
 
 /**
- * 通话会话注册表：多通话改造的核心容器（arch-design §3.3.1）。
+ * 通话会话注册表：多通话的核心容器。
  *
  * - 并发上限 {@link #MAX_SESSIONS}（2），终态会话不计容量（仅短暂
  *   留存供 UI 展示终态）；
  * - 键为会话内部 sessionId（呼出会话在 INVITE 提交前尚无 pjsua callId，
  *   callId 为 -1，故不能作键）；callId 检索经 {@link #findByCallId}；
  * - 终态会话在 {@link #TERMINAL_LINGER_MS} 后由 {@link #purgeExpired}
- *   移除（对齐"终态短暂可见后移除"节奏，detail-design §2.1）；
+ *   移除（"终态短暂可见后移除"节奏，供 UI 展示终态后收口）；
  * - 线程模型：写路径仅引擎主线程；公开方法 synchronized 以支持
  *   snapshotCalls"任意时刻可查"契约（跨线程读取容器安全，会话字段
  *   仍以主线程写入为准，读到的可能是近似值 —— 视图快照语义足够）。
@@ -37,7 +37,9 @@ public class CallSessionRegistry {
         if (activeCount() >= MAX_SESSIONS) {
             return null;
         }
-        /* callId 复用防御：pjsua 会回收 id，新会话顶掉同 callId 旧残留 */
+        /* 键为内部单调递增 sessionId（与 pjsua callId 解耦：callId 槽位
+         * 会被复用，作键会碰撞；终态滞留会话经 findByCallId 的跳过
+         * 终态规则与 callId 旧值隔离） */
         long id = nextSessionId++;
         CallSession session = new CallSession(id, direction);
         session.createdAt = System.currentTimeMillis();
@@ -45,13 +47,18 @@ public class CallSessionRegistry {
         return session;
     }
 
-    /** 按 pjsua callId 检索（callId 无效/-1 时返回 null） */
+    /**
+     * 按 pjsua callId 检索（callId 无效/-1 时返回 null；跳过终态滞留
+     * 会话）。pjsua callId 槽位取最小空闲值，挂断后新呼叫会立刻复用
+     * 同一 id——终态会话在 {@link #TERMINAL_LINGER_MS} 滞留窗口内仍
+     * 持有旧 callId，不跳过会把新呼叫（如来电判重）误配到滞留会话上。
+     */
     public synchronized CallSession findByCallId(int callId) {
         if (callId < 0) {
             return null;
         }
         for (CallSession s : sessions.values()) {
-            if (s.callId == callId) {
+            if (s.callId == callId && !s.isTerminal()) {
                 return s;
             }
         }

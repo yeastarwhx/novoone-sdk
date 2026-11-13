@@ -148,6 +148,8 @@ public class Xml {
     /**
      * 输入流解析为节点树（provisioning.xml 等小文档）。
      * 失败（空流/异常）返回 null，调用方按"无 provisioning"处理。
+     * 本方法独占消费流内容，finally 中负责关闭入参流（调用方无需、
+     * 也不应再关闭）。
      */
     public static Xml parse(InputStream is) {
         if (is == null) {
@@ -196,6 +198,11 @@ public class Xml {
         } catch (Exception e) {
             android.util.Log.w("Novosdk.Xml", "parse failed: " + e);
             return null;
+        } finally {
+            try {
+                is.close();
+            } catch (Exception ignored) {
+            }
         }
     }
 }

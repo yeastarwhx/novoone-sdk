@@ -3,18 +3,11 @@ package com.yeastar.sipcore;
 import android.util.Log;
 
 /**
- * ys_pjsua_app (C) <-> Java 桥（移植自 novoone-sip-demo，包名改为
- * com.yeastar.sipcore）。
+ * ys_pjsua_app (C) <-> Java 桥。
  *
  * native 入口 1:1 对齐 ys_pjsua_app.h；onXxx 静态方法由 C 侧
  * (pjsua worker 线程, AttachCurrentThread) 回调，本类不持状态，
  * 全部转发给 SipWebrtcEngine（由其切主线程）。
- *
- * 相对 demo 版差异：
- *   - 新增 nativeRejectCall（486 拒接）/ nativeSetOutgoingInviteHeaders
- *     （呼出 INVITE 附加头，一次性消费）/ nativeUnregisterAccount（登出）；
- *   - onIncomingSdp 追加 requestId / callerIdName 两个 INVITE 头参数
- *     （头缺失为 null；C 侧 NewStringUTF 已完成拷贝，Java String 生命周期安全）。
  *
  * 线程纪律（红线）：native 方法只能由 Java 线程串行先行调用
  * （首个调用完成 jclass 缓存，见 pjsip_jni.c ensure_init 注释），

@@ -55,7 +55,7 @@ class ConnectionImplApi23 extends Connection {
              * 麦克风采集受限 + 通话页不在前台）*/
             SdkBridge.get().bringAppToFront();
         } catch (Throwable t) {
-            android.util.Log.e("Novosdk.TelecomConn", "onAnswer 异常: " + t);
+            android.util.Log.e("Novosdk.TelecomConn", "onAnswer failed: " + t);
         }
     }
 
@@ -65,12 +65,12 @@ class ConnectionImplApi23 extends Connection {
             Instance.Calls.rejectIncomingHere(callEvent,
                     new Call.RejectReason("Rejected via Telecom", Call.RejectReason.Type.User));
         } catch (Throwable t) {
-            android.util.Log.e("Novosdk.TelecomConn", "onReject 异常: " + t);
+            android.util.Log.e("Novosdk.TelecomConn", "onReject failed: " + t);
         }
     }
 
     /**
-     * 挂断（含三星先斩后奏防御——09-21 移植）：
+     * 挂断（含三星先斩后奏防御）：
      * 蜂窝来电期间系统无视 CAPABILITY_SUPPORT_HOLD，先 markCallAsDisconnected
      * 再回调本方法（先斩后奏）终结 VoIP 通话。判定特征 = 连接已被系统置
      * DISCONNECTED（正常耳机挂断时系统不会预先标记）；蜂窝 managed call
@@ -83,14 +83,15 @@ class ConnectionImplApi23 extends Connection {
             if (getState() == Connection.STATE_DISCONNECTED
                     && SdkBridge.get().isManagedCellularCallActive()) {
                 android.util.Log.i("Novosdk.TelecomConn",
-                        "onDisconnect 系统策略终结（蜂窝通话存在），引擎通话保持"
-                        + " eventId=" + (callEvent != null ? callEvent.getEventId() : null));
+                        "onDisconnect: terminated by system policy (cellular call"
+                        + " active), engine call kept, eventId="
+                        + (callEvent != null ? callEvent.getEventId() : null));
                 disconnectAndDestroy(new DisconnectCause(DisconnectCause.REMOTE));
                 return;
             }
             Instance.Calls.close(callEvent);
         } catch (Throwable t) {
-            android.util.Log.e("Novosdk.TelecomConn", "onDisconnect 异常: " + t);
+            android.util.Log.e("Novosdk.TelecomConn", "onDisconnect failed: " + t);
         }
     }
 

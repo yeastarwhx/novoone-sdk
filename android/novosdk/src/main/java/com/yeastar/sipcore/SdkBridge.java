@@ -207,7 +207,7 @@ public final class SdkBridge implements EngineCallback {
     /* PUSH 模式后台生命周期（对齐 Acrobits IncomingCallsMode.PUSH 语义）  */
     /* ------------------------------------------------------------------ */
 
-    /* 26 形态实测对齐（2026-11-10 repro26 日志）：不可见（退后台/熄屏均经
+    /* 26 形态（Acrobits 旧栈）实测对齐：不可见（退后台/熄屏均经
      * 最后一个 Activity onStop）且无活跃通话 -> 亚秒级 un-REGISTER（服务器
      * 转推送模式，呼入走 FCM 唤醒链）；回前台 -> 立即重注册。STANDARD
      * 模式（无 Google Play）保持常驻注册不做后台注销。划掉场景因此免疫：
@@ -775,10 +775,9 @@ public final class SdkBridge implements EngineCallback {
     }
 
     /**
-     * transport 归一：udp/tcp/tls 三态，未知回退 tcp。
-     * tls→tcp 降级为历史设计（引擎交付形态仅 udp/tcp 时期）——引擎
-     * TRANSPORT_TLS 与 so 的 OpenSSL 符号均已具备（871 个 TLS/SSL 符号
-     * 实证），whxtest TLS 服务器（5061）接入后放开（2026-11-06）
+     * transport 归一：udp/tcp/tls 三态，未知/缺省回退 tcp。tls 直通引擎
+     * TRANSPORT_TLS（so 随库交付 OpenSSL 符号；服务端 TLS 端口由
+     * proxy_uri 携带，见 ys_pjsua_app.h 的 transport 注释）。
      */
     private static String normalizeTransport(String raw) {
         if (raw == null || raw.trim().isEmpty()) {
@@ -1087,6 +1086,15 @@ public final class SdkBridge implements EngineCallback {
         SipForegroundService.stop();
         stopStatsPolling();
         stopCustomRingtone();
+        /* 会话账本一并清空：engineShutdown 时未走终态分发链的会话
+         * （shutdown 时仍在通话）不会再触发 scheduleTerminalCleanup，
+         * 不清理则条目滞留至进程结束（respawn 后 sessionId 单调递增
+         * 不撞键，仅占用） */
+        mAnnounced.clear();
+        mLastLocalHold.clear();
+        mLastRemoteHold.clear();
+        mStats.clear();
+        mTransients.clear();
         if (!mTelecomDisabled) {
             try {
                 mPendingIncomingCall.set(null);

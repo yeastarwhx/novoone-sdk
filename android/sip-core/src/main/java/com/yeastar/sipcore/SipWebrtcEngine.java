@@ -28,19 +28,18 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * 呼叫引擎 + PeerConnection 生命周期（多通话会话化改造版）。
+ * 呼叫引擎 + PeerConnection 生命周期（多通话会话化）。
  *
- * 移植自 novoone-sip-demo SipWebrtcEngine（单通话），结构性差异（arch
- * -design §3.3）：
+ * 结构设计（区别于单通话引擎形态）：
  *   1. 单通话引擎字段（pc/audioTrack/awaitingAnswer/onHold...）全部下沉
  *      到 {@link CallSession}，经 {@link CallSessionRegistry} 管理多通话
  *      （上限 2）；
  *   2. 来电手动接听：onIncomingSdp 缓存 offer 与 INVITE 头，等
- *      callAnswer / callReject（demo 为自动 answer）；
+ *      callAnswer / callReject（非自动应答）；
  *   3. 呼出 requestId：make_call 前经 ys_set_outgoing_invite_headers 注入
  *      X-Request-ID 头（一次性消费）；
  *   4. 状态视图：pjsua state/last_status → CallSession.callStateView
- *      （detail-design §2.1 映射），经 EngineCallback 上抛。
+ *      （computeViewState 映射），经 EngineCallback 上抛。
  *
  * 线程模型（红线）：全部状态收敛主线程 Handler——ys_* 回调来自 pjsua
  * worker 线程（postXxx 转主线程），WebRTC SdpObserver / PeerConnection
@@ -373,14 +372,14 @@ public class SipWebrtcEngine {
             return true;
         } catch (Throwable t) {
             /* .so 缺失 / aar 异常：引擎 broken，后续所有操作失败
-             * （detail-design §1.1，登录流程不阻断） */
+             * （登录流程不阻断） */
             log("[engine] init FAILED: " + t + " -> engine broken");
             Log.e(TAG, "engine init failed", t);
             return false;
         }
     }
 
-    /** pjsua 销毁耗时（秒级），调用方应放后台线程（对齐 demo）。此后引擎不可再用。 */
+    /** pjsua 销毁耗时（秒级），调用方应放后台线程。此后引擎不可再用。 */
     public void engineShutdown() {
         /* 线程模型红线：会话/Registry/RingtoneHelper 仅主线程可碰——
          * 调用方（transport 变更的 engineScope IO 线程）一律 post 主线程
@@ -1018,8 +1017,8 @@ public class SipWebrtcEngine {
 
     /**
      * hold/resume：本地 track 静音（offer 方向自动变 sendonly/recvonly）→
-     * createOffer → SLD → 等 ICE → re-INVITE（sendonly/sendrecv，demo 已
-     * 验证机制按会话隔离）。对端 hold/resume 走 postReinviteSdp answer 链。
+     * createOffer → SLD → 等 ICE → re-INVITE（sendonly/sendrecv，机制按
+     * 会话隔离）。对端 hold/resume 走 postReinviteSdp answer 链。
      */
     public void callHold(final long callId, final boolean held) {
         runOnMain(new Runnable() {
@@ -1406,7 +1405,7 @@ public class SipWebrtcEngine {
                         + (sdp != null ? sdp.length() : 0)
                         + " bytes), renegotiating");
 
-                /* 对端 hold/resume 检测（§2.2 isOnHold）：offer 方向
+                /* 对端 hold/resume 检测（isOnHold 契约）：offer 方向
                  * sendonly/inactive = 对端保持；sendrecv/缺省 = 恢复 */
                 boolean remoteHold = detectRemoteHold(sdp);
                 if (remoteHold != s.remoteHoldFlag) {
@@ -1435,7 +1434,7 @@ public class SipWebrtcEngine {
     }
 
     /* ------------------------------------------------------------------ */
-    /* 视图状态映射（detail-design §2.1）                                  */
+    /* 视图状态映射（pjsua state/lastStatus → STATE_*）                    */
     /* ------------------------------------------------------------------ */
 
     /**
@@ -1522,7 +1521,7 @@ public class SipWebrtcEngine {
             return false;
         }
         /* 行级匹配（"a=sendonly" 非 "a=sendonlyr" 之类误配）：SIP SDP 中
-         * 属性均为完整行，含 \r\n；直接子串判断已足够（demo 域无畸变 SDP） */
+         * 属性均为完整行，含 \r\n；直接子串判断已足够（正常 SDP 无畸变行） */
         return sdp.contains("a=sendonly") || sdp.contains("a=inactive");
     }
 
@@ -1903,8 +1902,8 @@ public class SipWebrtcEngine {
     /* ------------------------------------------------------------------ */
 
     /* 服务器编码体系（Acrobits 惯例数字 ID）：0=PCMU 8=PCMA 9=G722
-     * 18=G729 103=OPUS。客户端一期支持 PCMU/PCMA/G722/OPUS 四种，
-     * G729(18) 二期支持——解析配置时静默过滤（codecMimeForId 返回
+     * 18=G729 103=OPUS。客户端当前支持 PCMU/PCMA/G722/OPUS 四种，
+     * G729(18) 暂不支持——解析配置时静默过滤（codecMimeForId 返回
      * null 即忽略）；GSM=3/ILBC=102 等其余 ID 一并忽略 */
 
     /* 默认 codec order（服务器侧惯例全集；解析只认 4 种支持编码，
@@ -2526,7 +2525,7 @@ public class SipWebrtcEngine {
         } else {
             RingtoneHelper.stopBackTone();
         }
-        /* 终态短暂可见后从 callList 移除（§2.1）。移除后必须再推一次
+        /* 终态短暂可见后从 callList 移除。移除后必须再推一次
          * 快照：JS 关闭通话页依赖收到空 callList（>0→0 触发面板关闭），
          * 只 purge 不通知 = JS 永远停在含终态的最后一个列表 → 界面卡死 */
         main.postDelayed(new Runnable() {
@@ -2860,7 +2859,7 @@ public class SipWebrtcEngine {
     }
 
     /* ------------------------------------------------------------------ */
-    /* 状态名（对齐 demo/iOS 日志文案）                                     */
+    /* 状态名（对齐 iOS 引擎日志文案）                                      */
     /* ------------------------------------------------------------------ */
 
     private static String callStateName(int state) {

@@ -1,7 +1,8 @@
 package com.yeastar.sipcore;
 
 /**
- * 引擎对外回调接口（delegate 层实现，Step 3 装配到 SdkDataSource）。
+ * 引擎对外回调接口（由 com.yeastar.sipcore.SdkBridge 实现，桥接到
+ * App 观察者通道）。
  *
  * 线程契约：全部回调均在主线程触发（引擎内部 Handler 收敛，ys 回调
  * 来自 pjsua worker 线程、SdpObserver 来自 WebRTC 内部线程，均先 post）。
@@ -29,13 +30,15 @@ public interface EngineCallback {
     void onIncomingCall(CallSession session);
 
     /**
-     * 引擎日志：level 对齐 pjsua（1=ERROR..5=TRACE）。引擎已过滤为
-     * level<=3 的关键日志，全量日志走 logcat。
+     * 引擎日志：level 对齐 pjsua（1=ERROR..5=TRACE）。转发侧已过滤为
+     * level<=4 的日志（4=SIP 消息 TX/RX dump，SDK 日志文件需要；
+     * 5 级库层不产生），全量日志走 logcat（见 JniBridge.onLog）。
      */
     void onLog(int level, String msg);
 
     /**
-     * 网络切换事件（防抖后，reason 为 "类型|IP" 形态，如 "wifi|10.0.0.2"）。
+     * 网络切换事件（防抖后）。reason 三形态见 NetworkMonitor：
+     * "type-switch:<old>-><new>" / "lost-recovered" / "ip-changed"。
      * 引擎内部已同时触发信令+媒体恢复链，本回调供上层做业务标记
      * （如换网 re-INVITE 的自定义头注入）。
      */

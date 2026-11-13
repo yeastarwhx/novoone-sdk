@@ -20,7 +20,8 @@ public final class TelecomUtil {
 
     private static final String TAG = "Novosdk.TelecomUtil";
 
-    private static PhoneAccountHandle sRegisteredHandle;
+    /* 主线程写（App 启动注册）/ Telecom binder 线程读（来电上报链），volatile 保证可见性 */
+    private static volatile PhoneAccountHandle sRegisteredHandle;
 
     private TelecomUtil() {
     }
@@ -28,7 +29,9 @@ public final class TelecomUtil {
     /**
      * 注册通话 PhoneAccount（App 包内 ConnectionService）。
      *
-     * @param selfManaged true = self-managed（系统不接管通话 UI，App 自绘）
+     * @param selfManaged true 时附加 highlightColor；无论取值均注册为
+     *                    self-managed（系统不接管通话 UI、App 自绘——
+     *                    本引擎唯一形态，见 isSelfManaged）
      * @return 注册成功的 PhoneAccountHandle；Telecom 不可用/失败返回 empty
      */
     public static Optional<PhoneAccountHandle> registerCallingAccount(

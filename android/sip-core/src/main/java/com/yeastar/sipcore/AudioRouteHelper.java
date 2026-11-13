@@ -88,7 +88,12 @@ public final class AudioRouteHelper {
 
     /** 可选路由列表（固定序：Receiver / Speaker / BluetoothSCO / Headset；
      * Receiver 与 Speaker 恒在（基础路由），蓝牙/有线按实际连接列出。
-     * 契约 audioExternal = available.size() > 2（§2.2） */
+     * 注意：蓝牙判定包含 A2DP-only 连接（无 SCO/HFP 的纯媒体耳机）——
+     * 该场景无 SCO 通信设备可切：API 31+（setCommunicationDevice 路径）
+     * setRoute 返回 false 由调用方容错；legacy 路径（API 26-30）仅发
+     * startBluetoothSco 异步请求、无结果反馈（恒返回 true）。
+     * 保持列出是为了与系统能力查询口径一致。
+     * 契约 audioExternal = available.size() > 2 */
     public static List<RouteInfo> getAvailable(Context context) {
         List<RouteInfo> list = new ArrayList<RouteInfo>();
         list.add(new RouteInfo(ROUTE_RECEIVER, ""));

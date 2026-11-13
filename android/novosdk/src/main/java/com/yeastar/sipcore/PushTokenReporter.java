@@ -92,8 +92,10 @@ final class PushTokenReporter {
 
     private static void report() throws Exception {
         SdkBridge.AccountSnapshot snap = SdkBridge.get().accountSnapshot();
+        /* getApplicationContext 未初始化时抛 IllegalStateException，由
+         * 外层 reportAsync 的 catch 兜底（下次触发重试），无需 null 判断 */
         Context ctx = AndroidUtil.getApplicationContext();
-        if (snap == null || ctx == null
+        if (snap == null
                 || snap.pushTokenReporterUrl == null || snap.pushTokenReporterUrl.isEmpty()) {
             android.util.Log.i(TAG, "push token report pending: no url/snapshot");
             return;

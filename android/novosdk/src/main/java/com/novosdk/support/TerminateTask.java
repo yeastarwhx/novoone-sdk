@@ -19,6 +19,7 @@ public class TerminateTask {
 
     private final Handler mHandler = new Handler(Looper.getMainLooper());
     private volatile boolean mCancelled;
+    private Runnable mPendingCallback;
 
     /** 执行终止（任意线程可调；完成经 onTerminated 主线程回调） */
     public void execute() {
@@ -26,7 +27,7 @@ public class TerminateTask {
             com.yeastar.sipcore.SdkBridge.get().shutdown();
         } catch (Throwable ignored) {
         }
-        mHandler.postDelayed(new Runnable() {
+        mPendingCallback = new Runnable() {
             @Override
             public void run() {
                 if (!mCancelled) {
@@ -37,12 +38,17 @@ public class TerminateTask {
                     }
                 }
             }
-        }, TERMINATE_SETTLE_MS);
+        };
+        mHandler.postDelayed(mPendingCallback, TERMINATE_SETTLE_MS);
     }
 
-    /** 取消（挂起等待方协同取消） */
+    /** 取消（挂起等待方协同取消；同时移除滞留的主线程回调） */
     public void cancel() {
         mCancelled = true;
+        Runnable pending = mPendingCallback;
+        if (pending != null) {
+            mHandler.removeCallbacks(pending);
+        }
     }
 
     /** 终止完成回调（子类覆盖） */
